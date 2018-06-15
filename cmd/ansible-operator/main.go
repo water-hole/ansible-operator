@@ -2,12 +2,18 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io/ioutil"
 	"runtime"
 
 	stub "github.com/automationbroker/ansible-operator/pkg/stub"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	yaml "gopkg.in/yaml.v2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/sirupsen/logrus"
 )
@@ -18,18 +24,64 @@ func printVersion() {
 	logrus.Infof("operator-sdk Version: %v", sdkVersion.Version)
 }
 
+type config struct {
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
+	Group   string `yaml:"group"`
+	Kind    string `yaml:"kind"`
+	// Command to execute.
+	//Command string `yaml:"command"`
+	// Path that will be passed to the command.
+	Path string `yaml:"path"`
+}
+
 func main() {
 	printVersion()
-
-	resource := "app.example.com/v1alpha1"
-	kind := "deleteme"
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		logrus.Fatalf("Failed to get watch namespace: %v", err)
 	}
-	resyncPeriod := 5
-	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
-	sdk.Watch(resource, kind, namespace, resyncPeriod)
-	sdk.Handle(stub.NewHandler())
+	resyncPeriod := 60
+	configs, err := readConfig()
+	if err != nil {
+		logrus.Fatalf("Failed to get configs: %v", err)
+	}
+
+	m := map[schema.GroupVersionKind]string{}
+
+	for _, c := range configs {
+		logrus.Infof("Watching %s/%v, %s, %s, %d path: %v", c.Group, c.Version, c.Kind, namespace, resyncPeriod, c.Path)
+		s := schema.GroupVersionKind{
+			Group:   c.Group,
+			Version: c.Version,
+			Kind:    c.Kind,
+		}
+		registerGVK(s)
+		m[s] = c.Path
+		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
+
+	}
+	sdk.Handle(stub.NewHandler(m))
 	sdk.Run(context.TODO())
+}
+
+func readConfig() ([]config, error) {
+	b, err := ioutil.ReadFile("/usr/local/bin/ansible-operator/config.yaml")
+	if err != nil {
+		logrus.Fatalf("failed to get config file %v", err)
+	}
+	c := []config{}
+	err = yaml.Unmarshal(b, &c)
+	if err != nil {
+		logrus.Fatalf("failed to unmarshal config %v", err)
+	}
+	return c, nil
+}
+
+func registerGVK(gvk schema.GroupVersionKind) {
+	schemeBuilder := k8sruntime.NewSchemeBuilder(func(s *k8sruntime.Scheme) error {
+		s.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		return nil
+	})
+	k8sutil.AddToSDKScheme(schemeBuilder.AddToScheme)
 }

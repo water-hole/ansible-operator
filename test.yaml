@@ -1,0 +1,30 @@
+---
+
+- hosts: localhost
+  vars:
+    meta:
+      namespace: default
+    message: hello world
+    delay: 10
+  tasks:
+  - k8s:
+      definition:
+        kind: Deployment
+        apiVersion: apps/v1
+        metadata:
+          name: test
+          namespace: '{{ meta.namespace }}'
+        spec:
+          selector:
+            matchLabels:
+              app: test
+          template:
+            metadata:
+              labels:
+                app: test
+            spec:
+              containers:
+              - name: test
+                image: "busybox"
+                command: ["/bin/sh"]
+                args: ["-c", "while true; do echo {{ message|quote }}; sleep {{ delay | int }} ;done"]

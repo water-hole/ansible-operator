@@ -1,4 +1,5 @@
 apiVersion: "app.example.com/v1alpha1"
-kind: "deleteme"
+kind: "Database"
 metadata:
   name: "example"
+spec:

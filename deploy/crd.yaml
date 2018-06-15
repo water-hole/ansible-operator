@@ -1,13 +1,13 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  name: deletemes.app.example.com
+  name: databases.app.example.com
 spec:
   group: app.example.com
   names:
-    kind: deleteme
-    listKind: deletemeList
-    plural: deletemes
-    singular: deleteme
+    kind: Database
+    listKind: databaseList
+    plural: databases
+    singular: database
   scope: Namespaced
   version: v1alpha1

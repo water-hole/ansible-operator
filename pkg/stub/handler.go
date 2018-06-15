@@ -2,67 +2,55 @@ package stub
 
 import (
 	"context"
-
-	"github.com/automationbroker/ansible-operator/pkg/apis/app/v1alpha1"
+	"encoding/json"
+	"os"
+	"os/exec"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func NewHandler() sdk.Handler {
-	return &Handler{}
+func NewHandler(m map[schema.GroupVersionKind]string) sdk.Handler {
+	return &Handler{crdToPlaybook: m}
 }
 
 type Handler struct {
+	crdToPlaybook map[schema.GroupVersionKind]string
 	// Fill me
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
-	switch o := event.Object.(type) {
-	case *v1alpha1.deleteme:
-		err := sdk.Create(newbusyBoxPod(o))
-		if err != nil && !errors.IsAlreadyExists(err) {
-			logrus.Errorf("Failed to create busybox pod : %v", err)
-			return err
-		}
+	p, ok := h.crdToPlaybook[event.Object.GetObjectKind().GroupVersionKind()]
+	if !ok {
+		logrus.Warnf("unable to find playbook mapping for gvk: %v", event.Object.GetObjectKind().GroupVersionKind())
+		return nil
 	}
-	return nil
+	u, ok := event.Object.(*unstructured.Unstructured)
+	if !ok {
+		logrus.Warnf("object was not unstructured - %#v", event.Object)
+		return nil
+	}
+	s := u.Object["spec"]
+	spec, ok := s.(map[string]interface{})
+	if !ok {
+		u.Object["spec"] = map[string]interface{}{}
+		sdk.Update(u)
+		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
+		return nil
+	}
+
+	return runPlaybook(p, spec)
 }
 
-// newbusyBoxPod demonstrates how to create a busybox pod
-func newbusyBoxPod(cr *v1alpha1.deleteme) *corev1.Pod {
-	labels := map[string]string{
-		"app": "busy-box",
+func runPlaybook(path string, parameters map[string]interface{}) error {
+	b, err := json.Marshal(parameters)
+	if err != nil {
+		return err
 	}
-	return &corev1.Pod{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Pod",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "busy-box",
-			Namespace: cr.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(cr, schema.GroupVersionKind{
-					Group:   v1alpha1.SchemeGroupVersion.Group,
-					Version: v1alpha1.SchemeGroupVersion.Version,
-					Kind:    "deleteme",
-				}),
-			},
-			Labels: labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
+	dc := exec.Command("ansible-playbook", path, "--extra-vars", string(b))
+	dc.Stdout = os.Stdout
+	dc.Stderr = os.Stderr
+	return dc.Run()
 }
