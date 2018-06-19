@@ -49,7 +49,7 @@ func runPlaybook(path string, parameters map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	dc := exec.Command("ansible-playbook", path, "--extra-vars", string(b))
+	dc := exec.Command("ansible-playbook", path, "-vv", "--extra-vars", string(b))
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
 	return dc.Run()

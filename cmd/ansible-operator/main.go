@@ -66,7 +66,7 @@ func main() {
 }
 
 func readConfig() ([]config, error) {
-	b, err := ioutil.ReadFile("/usr/local/bin/ansible-operator/config.yaml")
+	b, err := ioutil.ReadFile("/opt/ansible/config.yaml")
 	if err != nil {
 		logrus.Fatalf("failed to get config file %v", err)
 	}
