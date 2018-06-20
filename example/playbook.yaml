@@ -1,0 +1,7 @@
+- hosts: localhost
+  roles:
+  - busybox
+  tasks:
+  - debug: msg=test
+  - import_role:
+      name: "busybox"

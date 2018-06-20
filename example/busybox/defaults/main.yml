@@ -1,0 +1,6 @@
+---
+# defaults file for busybox
+meta:
+  namespace: default
+message: hello world
+delay: 10
