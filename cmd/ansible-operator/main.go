@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	proxy "github.com/automationbroker/ansible-operator/pkg/proxy"
+	"github.com/automationbroker/ansible-operator/pkg/runner"
 	stub "github.com/automationbroker/ansible-operator/pkg/stub"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -93,7 +94,8 @@ func runSDK(done chan error) {
 		return
 	}
 
-	m := map[schema.GroupVersionKind]string{}
+	m := map[schema.GroupVersionKind]runner.Runner{}
+
 	for _, c := range configs {
 		logrus.Infof("Watching %s/%v, %s, %s, %d path: %v", c.Group, c.Version, c.Kind, namespace, resyncPeriod, c.Path)
 		s := schema.GroupVersionKind{
@@ -102,7 +104,10 @@ func runSDK(done chan error) {
 			Kind:    c.Kind,
 		}
 		registerGVK(s)
-		m[s] = c.Path
+		m[s] = &runner.Playbook{
+			Path: c.Path,
+			GVK:  s,
+		}
 		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
 
 	}

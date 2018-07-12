@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: ansible-operator
-          image: docker.io/shurley/busybox-ansible-operator:demo
+          image: docker.io/shurley/busybox-ansible-operator-test
           command:
           - ansible-operator
           imagePullPolicy: Always
