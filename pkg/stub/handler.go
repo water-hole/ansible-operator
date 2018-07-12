@@ -1,8 +1,13 @@
 package stub
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"html/template"
+	"io/ioutil"
 	"os"
 	"os/exec"
 
@@ -32,6 +37,10 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
 		return nil
 	}
+	kubeconfig, err := createKubeConfig(u)
+	if err != nil {
+		// TODO Do something
+	}
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
 	if !ok {
@@ -41,15 +50,71 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		return nil
 	}
 
-	return runPlaybook(p, spec)
+	return runPlaybook(p, spec, kubeconfig)
 }
 
-func runPlaybook(path string, parameters map[string]interface{}) error {
+func createKubeConfig(object *unstructured.Unstructured) (string, error) {
+	file, err := ioutil.TempFile("", "kubeconfig")
+	if err != nil {
+		return "", err
+	}
+
+	tmpl := `---
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: http://{{.Credentials}}@{{.ProxyServer}}
+  name: proxy-server
+contexts:
+- context:
+    cluster: proxy-server
+    user: admin/proxy-server
+  name: {{.Namespace}}/proxy-server
+current-context: {{.Namespace}}/proxy-server
+preferences: {}
+users:
+- name: admin/proxy-server
+`
+	var parsed bytes.Buffer
+	credentials, _ := json.Marshal(map[string]string{
+		"apiVersion": object.GetAPIVersion(),
+		"kind":       object.GetKind(),
+		"name":       object.GetName(),
+		"uid":        string(object.GetUID()),
+	})
+
+	t := template.Must(template.New("kubeconfig").Parse(tmpl))
+	t.Execute(&parsed, struct {
+		Credentials string
+		ProxyServer string
+		Namespace   string
+	}{
+		Credentials: base64.URLEncoding.EncodeToString([]byte(credentials)),
+		ProxyServer: "127.0.0.1:8001",
+		Namespace:   object.GetNamespace(),
+	})
+
+	if _, err := file.WriteString(parsed.String()); err != nil {
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return file.Name(), nil
+
+}
+
+func runPlaybook(path string, parameters map[string]interface{}, kubeconfig string) error {
 	b, err := json.Marshal(parameters)
 	if err != nil {
 		return err
 	}
 	dc := exec.Command("ansible-playbook", path, "-vv", "--extra-vars", string(b))
+	dc.Env = append(os.Environ(),
+		fmt.Sprintf("K8s_AUTH_KUBECONFIG=%s", kubeconfig),
+	)
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
 	return dc.Run()

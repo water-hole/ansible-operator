@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"runtime"
 
+	proxy "github.com/automationbroker/ansible-operator/pkg/proxy"
 	stub "github.com/automationbroker/ansible-operator/pkg/stub"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 
 	"github.com/sirupsen/logrus"
 )
@@ -37,6 +39,7 @@ type config struct {
 
 func main() {
 	printVersion()
+	go RunProxy("127.0.0.1", 8001)
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		logrus.Fatalf("Failed to get watch namespace: %v", err)
@@ -84,4 +87,23 @@ func registerGVK(gvk schema.GroupVersionKind) {
 		return nil
 	})
 	k8sutil.AddToSDKScheme(schemeBuilder.AddToScheme)
+}
+
+func RunProxy(address string, port int) error {
+	clientConfig, err := rest.InClusterConfig()
+	if err != nil {
+		return err
+	}
+
+	server, err := proxy.NewServer("", nil, clientConfig)
+	if err != nil {
+		return err
+	}
+	l, err := server.Listen(address, port)
+	if err != nil {
+		return err
+	}
+	logrus.Infof("Starting to serve on %s\n", l.Addr().String())
+	logrus.Fatal(server.ServeOnListener(l))
+	return nil
 }
