@@ -6,7 +6,7 @@
       kind: Deployment
       apiVersion: apps/v1
       metadata:
-        name: test
+        name: '{{ meta.name }}-busybox'
         namespace: '{{ meta.namespace }}'
       spec:
         selector:

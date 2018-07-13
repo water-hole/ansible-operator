@@ -54,5 +54,22 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
 		return nil
 	}
-	return p.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
+	je, err := p.Run(spec, u.GetName(), u.GetNamespace())
+	if err != nil {
+		return err
+	}
+	statusMap, ok := u.Object["status"].(map[string]interface{})
+	if !ok {
+		u.Object["status"] = runner.ResourceStatus{
+			Status: runner.NewStatusFromStatusJobEvent(je),
+		}
+		sdk.Update(u)
+		logrus.Infof("adding status for the first time")
+		return nil
+	}
+	// Need to conver the map[string]interface into a resource status.
+	rs := runner.UpdateResourceStatus(statusMap, je)
+	u.Object["status"] = rs
+	sdk.Update(u)
+	return nil
 }

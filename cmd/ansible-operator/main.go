@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"runtime"
+	"time"
 
 	proxy "github.com/automationbroker/ansible-operator/pkg/proxy"
 	"github.com/automationbroker/ansible-operator/pkg/runner"
@@ -93,6 +95,8 @@ func runSDK(done chan error) {
 		done <- err
 		return
 	}
+	//Seed rand
+	rand.Seed(time.Now().Unix())
 
 	m := map[schema.GroupVersionKind]runner.Runner{}
 
