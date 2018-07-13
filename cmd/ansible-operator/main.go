@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
 
+	proxy "github.com/automationbroker/ansible-operator/pkg/proxy"
 	stub "github.com/automationbroker/ansible-operator/pkg/stub"
+	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -14,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/sirupsen/logrus"
 )
@@ -37,34 +43,24 @@ type config struct {
 
 func main() {
 	printVersion()
-	namespace, err := k8sutil.GetWatchNamespace()
-	if err != nil {
-		logrus.Fatalf("Failed to get watch namespace: %v", err)
-	}
-	resyncPeriod := 60
-	configs, err := readConfig()
-	if err != nil {
-		logrus.Fatalf("Failed to get configs: %v", err)
-	}
+	done := make(chan error)
 
-	m := map[schema.GroupVersionKind]string{}
+	// start the proxy
+	go runProxy("localhost", 8888, done)
 
-	for _, c := range configs {
-		logrus.Infof("Watching %s/%v, %s, %s, %d path: %v", c.Group, c.Version, c.Kind, namespace, resyncPeriod, c.Path)
-		s := schema.GroupVersionKind{
-			Group:   c.Group,
-			Version: c.Version,
-			Kind:    c.Kind,
-		}
-		registerGVK(s)
-		m[s] = c.Path
-		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
+	// start the operator
+	go runSDK(done)
 
+	// wait for either to finish
+	err := <-done
+	if err == nil {
+		logrus.Info("Exiting")
+	} else {
+		logrus.Fatal(err.Error())
 	}
-	sdk.Handle(stub.NewHandler(m))
-	sdk.Run(context.TODO())
 }
 
+// readConfig reads the operator's config file at /opt/ansible/config.yaml
 func readConfig() ([]config, error) {
 	b, err := ioutil.ReadFile("/opt/ansible/config.yaml")
 	if err != nil {
@@ -84,4 +80,54 @@ func registerGVK(gvk schema.GroupVersionKind) {
 		return nil
 	})
 	k8sutil.AddToSDKScheme(schemeBuilder.AddToScheme)
+}
+
+func runSDK(done chan error) {
+	namespace, err := k8sutil.GetWatchNamespace()
+	if err != nil {
+		logrus.Error("Failed to get watch namespace")
+		done <- err
+		return
+	}
+	resyncPeriod := 60
+	configs, err := readConfig()
+	if err != nil {
+		logrus.Error("Failed to get configs")
+		done <- err
+		return
+	}
+
+	m := map[schema.GroupVersionKind]string{}
+	for _, c := range configs {
+		logrus.Infof("Watching %s/%v, %s, %s, %d path: %v", c.Group, c.Version, c.Kind, namespace, resyncPeriod, c.Path)
+		s := schema.GroupVersionKind{
+			Group:   c.Group,
+			Version: c.Version,
+			Kind:    c.Kind,
+		}
+		registerGVK(s)
+		m[s] = c.Path
+		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
+
+	}
+	sdk.Handle(stub.NewHandler(m))
+	sdk.Run(context.TODO())
+	done <- nil
+}
+
+func runProxy(address string, port int, done chan error) {
+	clientConfig := k8sclient.GetKubeConfig()
+
+	server, err := proxy.NewServer("/", clientConfig)
+	if err != nil {
+		done <- err
+		return
+	}
+	l, err := server.Listen(address, port)
+	if err != nil {
+		done <- err
+		return
+	}
+	logrus.Infof("Starting to serve on %s\n", l.Addr().String())
+	done <- server.ServeOnListener(l)
 }
