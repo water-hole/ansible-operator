@@ -1,8 +1,6 @@
 package runner
 
 import (
-	"time"
-
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,7 +33,6 @@ func NewStatusFromStatusJobEvent(je *StatusJobEvent) Status {
 	if v, ok := je.EventData.Failures[host]; ok {
 		f = v
 	}
-	logrus.Infof("%#v", je.Created)
 	return Status{
 		Ok:               o,
 		Changed:          c,
@@ -70,19 +67,9 @@ func NewStatusFromMap(sm map[string]interface{}) Status {
 	}
 	if v, ok := sm["completion"]; ok {
 		s := v.(string)
-		logrus.Infof("!!!!!!------time string from map-------!!!!!!!!: %v", s)
-		t, err := time.Parse("2006-01-02T15:04:05.999999999", s)
-		if err != nil {
-			logrus.Infof("!!!!!!! unable to get completion !!!!!! ---- %#v", err)
-		}
-		e = EventTime{
-			Time: t,
-		}
-		logrus.Infof("e: %#v, t: %#v", e, t)
-	} else {
-		logrus.Infof("!!!!!!! unable to get completion !!!!!! ---- %#v", sm)
+		e.UnmarshalJSON([]byte(s))
 	}
-	logrus.Infof("e: %#v", e)
+	logrus.Infof("e: %v", e)
 	return Status{
 		Ok:               o,
 		Changed:          c,
@@ -109,7 +96,6 @@ func UpdateResourceStatus(sm map[string]interface{}, je *StatusJobEvent) (bool, 
 	history := []Status{}
 	h, ok := sm["history"]
 	if ok {
-		logrus.Infof("%+#v", h)
 		hi := h.([]interface{})
 		for _, m := range hi {
 			ma := m.(map[string]interface{})

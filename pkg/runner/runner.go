@@ -24,7 +24,6 @@ type EventTime struct {
 
 // UnmarshalJSON - override unmarshal json.
 func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
-	logrus.Infof("Time Value: %q", b)
 	e.Time, err = time.Parse("2006-01-02T15:04:05.999999999", strings.Trim(string(b[:]), "\"\\"))
 	if err != nil {
 		return err
@@ -34,8 +33,6 @@ func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
 
 // MarshalJSON - override the marshal json.
 func (e EventTime) MarshalJSON() ([]byte, error) {
-	logrus.Infof("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))
-	logrus.Infof("\"%q\"", []byte(fmt.Sprintf(e.Time.Format("2006-01-02T15:04:05.99999999"))))
 	return []byte(fmt.Sprintf("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))), nil
 }
 
@@ -91,7 +88,6 @@ type Playbook struct {
 func (p *Playbook) Run(parameters map[string]interface{}, name, namespace string) (*StatusJobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
 	runnerSandbox := fmt.Sprintf("/home/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
-	logrus.Infof("creating ansible-runner sandbox - %v", runnerSandbox)
 	b, err := json.Marshal(parameters)
 	if err != nil {
 		return nil, err
@@ -112,11 +108,12 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace string
 	dc := exec.Command("ansible-runner", "-vv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
-	logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
 	err = dc.Run()
 	if err != nil {
 		return nil, err
 	}
+	logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
+	logrus.Infof("collecting results for run %v", ident)
 
 	eventFiles, err := ioutil.ReadDir(fmt.Sprintf("%v/artifacts/%v/job_events", runnerSandbox, ident))
 	if err != nil {
