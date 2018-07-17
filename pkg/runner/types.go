@@ -1,6 +1,10 @@
 package runner
 
-import "github.com/sirupsen/logrus"
+import (
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
 
 const (
 	host = "localhost"
@@ -31,6 +35,7 @@ func NewStatusFromStatusJobEvent(je *StatusJobEvent) Status {
 	if v, ok := je.EventData.Failures[host]; ok {
 		f = v
 	}
+	logrus.Infof("%#v", je.Created)
 	return Status{
 		Ok:               o,
 		Changed:          c,
@@ -40,35 +45,51 @@ func NewStatusFromStatusJobEvent(je *StatusJobEvent) Status {
 	}
 }
 
+func IsStatusEqual(s1, s2 Status) bool {
+	return (s1.Ok == s2.Ok && s1.Changed == s2.Changed && s1.Skipped == s2.Skipped && s1.Failures == s2.Failures)
+}
+
 func NewStatusFromMap(sm map[string]interface{}) Status {
 	//Create Old top level status
 	o := 0
 	c := 0
 	s := 0
 	f := 0
+	e := EventTime{}
 	if v, ok := sm["changed"]; ok {
-		c = v.(int)
+		c = int(v.(int64))
 	}
 	if v, ok := sm["ok"]; ok {
-		o = v.(int)
+		o = int(v.(int64))
 	}
 	if v, ok := sm["skipped"]; ok {
-		s = v.(int)
+		s = int(v.(int64))
 	}
 	if v, ok := sm["failures"]; ok {
-		f = v.(int)
+		f = int(v.(int64))
 	}
 	if v, ok := sm["completion"]; ok {
 		s := v.(string)
-		logrus.Infof("%v", s)
+		logrus.Infof("!!!!!!------time string from map-------!!!!!!!!: %v", s)
+		t, err := time.Parse("2006-01-02T15:04:05.999999999", s)
+		if err != nil {
+			logrus.Infof("!!!!!!! unable to get completion !!!!!! ---- %#v", err)
+		}
+		e = EventTime{
+			Time: t,
+		}
+		logrus.Infof("e: %#v, t: %#v", e, t)
+	} else {
+		logrus.Infof("!!!!!!! unable to get completion !!!!!! ---- %#v", sm)
 	}
+	logrus.Infof("e: %#v", e)
 	return Status{
-		Ok:       o,
-		Changed:  c,
-		Failures: f,
-		Skipped:  s,
+		Ok:               o,
+		Changed:          c,
+		Failures:         f,
+		Skipped:          s,
+		TimeOfCompletion: e,
 	}
-
 }
 
 type ResourceStatus struct {
@@ -77,20 +98,26 @@ type ResourceStatus struct {
 	History        []Status `json:"history,omitempty"`
 }
 
-func UpdateResourceStatus(sm map[string]interface{}, je *StatusJobEvent) ResourceStatus {
+func UpdateResourceStatus(sm map[string]interface{}, je *StatusJobEvent) (bool, ResourceStatus) {
 	newStatus := NewStatusFromStatusJobEvent(je)
 	oldStatus := NewStatusFromMap(sm)
+	// Don't update the status if new status and old status are equal.
+	if IsStatusEqual(newStatus, oldStatus) {
+		return false, ResourceStatus{}
+	}
+
 	history := []Status{}
 	h, ok := sm["history"]
 	if ok {
 		logrus.Infof("%+#v", h)
-		hi := h.([]map[string]interface{})
+		hi := h.([]interface{})
 		for _, m := range hi {
-			history = append(history, NewStatusFromMap(m))
+			ma := m.(map[string]interface{})
+			history = append(history, NewStatusFromMap(ma))
 		}
 	}
 	history = append(history, oldStatus)
-	return ResourceStatus{
+	return true, ResourceStatus{
 		Status:  newStatus,
 		History: history,
 	}

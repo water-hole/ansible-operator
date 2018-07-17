@@ -68,8 +68,10 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		return nil
 	}
 	// Need to conver the map[string]interface into a resource status.
-	rs := runner.UpdateResourceStatus(statusMap, je)
-	u.Object["status"] = rs
-	sdk.Update(u)
+	if update, rs := runner.UpdateResourceStatus(statusMap, je); update {
+		u.Object["status"] = rs
+		sdk.Update(u)
+		return nil
+	}
 	return nil
 }

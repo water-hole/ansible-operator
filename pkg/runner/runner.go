@@ -18,17 +18,25 @@ import (
 )
 
 // EventTime - time to unmarshal nano time.
-type EventTime time.Time
+type EventTime struct {
+	time.Time
+}
 
 // UnmarshalJSON - override unmarshal json.
-func (e EventTime) UnmarshalJSON(b []byte) error {
+func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
 	logrus.Infof("Time Value: %q", b)
-	t, err := time.Parse("2006-01-02T15:04:05.999999999", strings.Trim(string(b[:]), "\"\\"))
+	e.Time, err = time.Parse("2006-01-02T15:04:05.999999999", strings.Trim(string(b[:]), "\"\\"))
 	if err != nil {
 		return err
 	}
-	e = EventTime(t)
 	return nil
+}
+
+// MarshalJSON - override the marshal json.
+func (e EventTime) MarshalJSON() ([]byte, error) {
+	logrus.Infof("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))
+	logrus.Infof("\"%q\"", []byte(fmt.Sprintf(e.Time.Format("2006-01-02T15:04:05.99999999"))))
+	return []byte(fmt.Sprintf("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))), nil
 }
 
 // JobEvent - event of an ansible run.
