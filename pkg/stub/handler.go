@@ -3,11 +3,14 @@ package stub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 
+	"github.com/automationbroker/ansible-operator/pkg/kubeconfig"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -32,6 +35,19 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
 		return nil
 	}
+	ownerRef := metav1.OwnerReference{
+		APIVersion: u.GetAPIVersion(),
+		Kind:       u.GetKind(),
+		Name:       u.GetName(),
+		UID:        u.GetUID(),
+	}
+
+	kc, err := kubeconfig.Create(ownerRef, "http://localhost:8888", u.GetNamespace())
+	if err != nil {
+		return err
+	}
+	defer os.Remove(kc.Name())
+
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
 	if !ok {
@@ -41,15 +57,18 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		return nil
 	}
 
-	return runPlaybook(p, spec)
+	return runPlaybook(p, spec, kc.Name())
 }
 
-func runPlaybook(path string, parameters map[string]interface{}) error {
+func runPlaybook(path string, parameters map[string]interface{}, configPath string) error {
 	b, err := json.Marshal(parameters)
 	if err != nil {
 		return err
 	}
 	dc := exec.Command("ansible-playbook", path, "-vv", "--extra-vars", string(b))
+	dc.Env = append(os.Environ(),
+		fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", configPath),
+	)
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
 	return dc.Run()
