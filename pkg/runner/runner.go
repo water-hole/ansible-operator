@@ -93,7 +93,7 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kc st
 		return nil, err
 	}
 	//Write parameters to correct file on disk
-	err = createRunnerEnvironment(b, runnerSandbox)
+	err = createRunnerEnvironment(b, runnerSandbox, kc)
 	if err != nil {
 		return nil, err
 	}
@@ -142,10 +142,17 @@ type Role struct {
 	name string
 }
 
-func createRunnerEnvironment(parameters []byte, runnerSandbox string) error {
+func createRunnerEnvironment(parameters []byte, runnerSandbox, configPath string) error {
 	err := os.MkdirAll(fmt.Sprintf("%v/env", runnerSandbox), os.ModePerm)
 	if err != nil {
 		logrus.Errorf("unable to create runner directory - %v", runnerSandbox)
+		return err
+	}
+	err = ioutil.WriteFile(fmt.Sprintf("%v/env/envvars", runnerSandbox), []byte(
+		fmt.Sprintf("---\nK8S_AUTH_KUBECONFIG=%s", configPath)), 0644,
+	)
+	if err != nil {
+		logrus.Errorf("unable to create extravars file - %v", runnerSandbox)
 		return err
 	}
 	err = os.MkdirAll(fmt.Sprintf("%v/project", runnerSandbox), os.ModePerm)

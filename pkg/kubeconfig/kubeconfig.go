@@ -72,11 +72,9 @@ func Create(ownerRef metav1.OwnerReference, proxyURL string, namespace string) (
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
 	if _, err := file.WriteString(parsed.String()); err != nil {
-		return nil, err
-	}
-	if err := file.Close(); err != nil {
 		return nil, err
 	}
 	return file, nil
