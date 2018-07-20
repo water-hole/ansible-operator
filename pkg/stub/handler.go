@@ -54,7 +54,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
 		return nil
 	}
-	je, err := p.Run(spec, u.GetName(), u.GetNamespace())
+	je, err := p.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
 	if err != nil {
 		return err
 	}

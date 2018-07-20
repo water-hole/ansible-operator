@@ -75,7 +75,7 @@ type StatsEventData struct {
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
 type Runner interface {
-	Run(map[string]interface{}, string, string) (*StatusJobEvent, error)
+	Run(map[string]interface{}, string, string, string) (*StatusJobEvent, error)
 }
 
 // Playbook - playbook type of runner.
@@ -85,7 +85,7 @@ type Playbook struct {
 }
 
 // Run - This should allow the playbook runner to run.
-func (p *Playbook) Run(parameters map[string]interface{}, name, namespace string) (*StatusJobEvent, error) {
+func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kc string) (*StatusJobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
 	runnerSandbox := fmt.Sprintf("/home/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
 	b, err := json.Marshal(parameters)
@@ -108,6 +108,7 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace string
 	dc := exec.Command("ansible-runner", "-vv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
+	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kc))
 	err = dc.Run()
 	if err != nil {
 		return nil, err
