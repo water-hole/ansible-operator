@@ -1,0 +1,20 @@
+language: go
+
+go:
+  - "1.10.x"
+
+go_import_path: github.com/automationbroker/ansible-operator
+
+install:
+  - go get github.com/golang/dep/cmd/dep
+  - mkdir -p $GOPATH/src/github.com/operator-framework
+  - cd $GOPATH/src/github.com/operator-framework
+  - git clone https://github.com/operator-framework/operator-sdk
+  - cd operator-sdk
+  - git checkout master
+  - make dep
+  - make install
+
+script:
+  - cd $GOPATH/src/github.com/automationbroker/ansible-operator
+  - operator-sdk build quay.io/shawnhurley/ansible-operator
