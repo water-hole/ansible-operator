@@ -72,6 +72,10 @@ func Create(ownerRef metav1.OwnerReference, proxyURL string, namespace string) (
 	if err != nil {
 		return nil, err
 	}
+	// multiple calls to close file will not hurt anything,
+	// but we don't want to lose the error because we are
+	// writing to the file, so we will call close twice.
+	defer file.Close()
 
 	if _, err := file.WriteString(parsed.String()); err != nil {
 		return nil, err

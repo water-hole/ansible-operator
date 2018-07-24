@@ -2,12 +2,10 @@ package stub
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/automationbroker/ansible-operator/pkg/kubeconfig"
+	"github.com/automationbroker/ansible-operator/pkg/runner"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,12 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func NewHandler(m map[schema.GroupVersionKind]string) sdk.Handler {
+func NewHandler(m map[schema.GroupVersionKind]runner.Runner) sdk.Handler {
 	return &Handler{crdToPlaybook: m}
 }
 
 type Handler struct {
-	crdToPlaybook map[schema.GroupVersionKind]string
+	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
 	// Fill me
 }
 
@@ -56,20 +54,24 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
 		return nil
 	}
-
-	return runPlaybook(p, spec, kc.Name())
-}
-
-func runPlaybook(path string, parameters map[string]interface{}, configPath string) error {
-	b, err := json.Marshal(parameters)
+	statusEvent, err := p.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
 	if err != nil {
 		return err
 	}
-	dc := exec.Command("ansible-playbook", path, "-vv", "--extra-vars", string(b))
-	dc.Env = append(os.Environ(),
-		fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", configPath),
-	)
-	dc.Stdout = os.Stdout
-	dc.Stderr = os.Stderr
-	return dc.Run()
+	statusMap, ok := u.Object["status"].(map[string]interface{})
+	if !ok {
+		u.Object["status"] = runner.ResourceStatus{
+			Status: runner.NewStatusFromStatusJobEvent(statusEvent),
+		}
+		sdk.Update(u)
+		logrus.Infof("adding status for the first time")
+		return nil
+	}
+	// Need to conver the map[string]interface into a resource status.
+	if update, status := runner.UpdateResourceStatus(statusMap, statusEvent); update {
+		u.Object["status"] = status
+		sdk.Update(u)
+		return nil
+	}
+	return nil
 }

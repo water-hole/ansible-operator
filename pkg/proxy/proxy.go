@@ -32,10 +32,9 @@ func singleJoiningSlash(a, b string) string {
 }
 
 func injectOwnerReference(h http.Handler) http.Handler {
-	logrus.Info("injecting owner reference")
-
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
+			logrus.Info("injecting owner reference")
 			dump, _ := httputil.DumpRequest(req, false)
 			fmt.Println(string(dump))
 
@@ -85,6 +84,8 @@ func injectOwnerReference(h http.Handler) http.Handler {
 			req.Body = ioutil.NopCloser(bytes.NewBuffer(newBody))
 			req.ContentLength = int64(len(newBody))
 		}
+		// Removing the authorization so that the proxy can set the correct authorization.
+		req.Header.Del("Authorization")
 		h.ServeHTTP(w, req)
 	})
 }
