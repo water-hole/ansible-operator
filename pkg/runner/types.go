@@ -1,9 +1,5 @@
 package runner
 
-import (
-	"github.com/sirupsen/logrus"
-)
-
 const (
 	host = "localhost"
 )
@@ -17,27 +13,28 @@ type Status struct {
 }
 
 func NewStatusFromStatusJobEvent(je *StatusJobEvent) Status {
+	// ok events.
 	o := 0
-	c := 0
-	s := 0
-	f := 0
+	changed := 0
+	skipped := 0
+	failures := 0
 	if v, ok := je.EventData.Changed[host]; ok {
-		c = v
+		changed = v
 	}
 	if v, ok := je.EventData.Ok[host]; ok {
 		o = v
 	}
 	if v, ok := je.EventData.Skipped[host]; ok {
-		s = v
+		skipped = v
 	}
 	if v, ok := je.EventData.Failures[host]; ok {
-		f = v
+		failures = v
 	}
 	return Status{
 		Ok:               o,
-		Changed:          c,
-		Skipped:          s,
-		Failures:         f,
+		Changed:          changed,
+		Skipped:          skipped,
+		Failures:         failures,
 		TimeOfCompletion: je.Created,
 	}
 }
@@ -48,33 +45,33 @@ func IsStatusEqual(s1, s2 Status) bool {
 
 func NewStatusFromMap(sm map[string]interface{}) Status {
 	//Create Old top level status
+	// ok events.
 	o := 0
-	c := 0
-	s := 0
-	f := 0
+	changed := 0
+	skipped := 0
+	failures := 0
 	e := EventTime{}
 	if v, ok := sm["changed"]; ok {
-		c = int(v.(int64))
+		changed = int(v.(int64))
 	}
 	if v, ok := sm["ok"]; ok {
 		o = int(v.(int64))
 	}
 	if v, ok := sm["skipped"]; ok {
-		s = int(v.(int64))
+		skipped = int(v.(int64))
 	}
 	if v, ok := sm["failures"]; ok {
-		f = int(v.(int64))
+		failures = int(v.(int64))
 	}
 	if v, ok := sm["completion"]; ok {
 		s := v.(string)
 		e.UnmarshalJSON([]byte(s))
 	}
-	logrus.Infof("e: %v", e)
 	return Status{
 		Ok:               o,
-		Changed:          c,
-		Failures:         f,
-		Skipped:          s,
+		Changed:          changed,
+		Skipped:          skipped,
+		Failures:         failures,
 		TimeOfCompletion: e,
 	}
 }

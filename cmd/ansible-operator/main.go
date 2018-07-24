@@ -95,7 +95,6 @@ func runSDK(done chan error) {
 		done <- err
 		return
 	}
-	//Seed rand
 	rand.Seed(time.Now().Unix())
 
 	m := map[schema.GroupVersionKind]runner.Runner{}

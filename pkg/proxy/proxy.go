@@ -84,6 +84,7 @@ func injectOwnerReference(h http.Handler) http.Handler {
 			req.Body = ioutil.NopCloser(bytes.NewBuffer(newBody))
 			req.ContentLength = int64(len(newBody))
 		}
+		// Removing the authorization so that the proxy can set the correct authorization.
 		req.Header.Del("Authorization")
 		h.ServeHTTP(w, req)
 	})
