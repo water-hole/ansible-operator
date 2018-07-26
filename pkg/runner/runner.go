@@ -8,13 +8,12 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // Runner - a runnable that should take the parameters and name and namespace
@@ -25,9 +24,8 @@ type Runner interface {
 
 // Playbook - playbook type of runner.
 type Playbook struct {
-	Path    string
-	GVK     schema.GroupVersionKind
-	Running map[types.NamespacedName]RunningJob
+	Path string
+	GVK  schema.GroupVersionKind
 }
 
 // Run - This should allow the playbook runner to run.
@@ -56,40 +54,38 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 	errChannel := make(chan error)
 	cancel := make(chan struct{})
 	w := NewWatcher()
+	s := w.StartWatching(runnerSandbox, fmt.Sprintf("%v", ident), cancel)
 	go func() {
 		err := dc.Run()
 		errChannel <- err
 	}()
 	for {
 		select {
-		case je := <-w.StartWatching(runnerSandbox, fmt.Sprintf("%v", ident), cancel):
+		case je := <-s:
 			logrus.Infof("event UUID: %v event: %v stdout: %v", je.UUID, je.Event, je.StdOut)
+			if je.Event == "playbook_on_stats" {
+				logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
+				logrus.Infof("collecting results for run %v", ident)
+				d, err := json.Marshal(je)
+				if err != nil {
+					return nil, err
+				}
+				o := &StatusJobEvent{}
+				err = json.Unmarshal(d, o)
+				if err != nil {
+					return nil, err
+				}
+				cancel <- struct{}{}
+				return o, nil
+			}
 		case err := <-errChannel:
 			if err != nil {
+				cancel <- struct{}{}
 				return nil, err
 			}
+		case <-time.After(10 * time.Minute):
 			cancel <- struct{}{}
-			logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
-			logrus.Infof("collecting results for run %v", ident)
-			eventFiles, err := ioutil.ReadDir(fmt.Sprintf("%v/artifacts/%v/job_events", runnerSandbox, ident))
-			if err != nil {
-				return nil, err
-			}
-			if len(eventFiles) == 0 {
-				return nil, fmt.Errorf("Unable to read event data")
-			}
-			sort.Sort(fileInfos(eventFiles))
-			//get the last event, which should be a status.
-			d, err := ioutil.ReadFile(fmt.Sprintf("%v/artifacts/%v/job_events/%v", runnerSandbox, ident, eventFiles[len(eventFiles)-1].Name()))
-			if err != nil {
-				return nil, err
-			}
-			o := &StatusJobEvent{}
-			err = json.Unmarshal(d, o)
-			if err != nil {
-				return nil, err
-			}
-			return o, nil
+			return nil, fmt.Errorf("timeout of 10 minutes was reached")
 		}
 	}
 }

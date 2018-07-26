@@ -3,7 +3,6 @@ package runner
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -136,12 +135,6 @@ func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
 // MarshalJSON - override the marshal json.
 func (e EventTime) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))), nil
-}
-
-//RunningJob - job that is currently running.
-type RunningJob struct {
-	WaitGroup sync.WaitGroup
-	Status    chan JobEvent
 }
 
 // JobEvent - event of an ansible run.
