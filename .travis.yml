@@ -29,7 +29,7 @@ install:
 script:
   # test builds work
   - cd $GOPATH/src/github.com/automationbroker/ansible-operator
-  - operator-sdk build quay.io/shawnhurley/ansible-operator
+  - operator-sdk build quay.io/shawn_hurley/ansible-operator
 
   # create example CRD and operator
   - pushd example
