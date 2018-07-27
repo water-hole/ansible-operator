@@ -53,15 +53,17 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
 	errChannel := make(chan error)
 	cancel := make(chan struct{})
-	w := NewWatcher()
-	s := w.StartWatching(runnerSandbox, fmt.Sprintf("%v", ident), cancel)
+	w, err := NewWatcher(runnerSandbox, fmt.Sprintf("%v", ident))
+	if err != nil {
+		return nil, err
+	}
 	go func() {
 		err := dc.Run()
 		errChannel <- err
 	}()
 	for {
 		select {
-		case je := <-s:
+		case je := <-w.JobEvents:
 			logrus.Infof("event UUID: %v event: %v stdout: %v", je.UUID, je.Event, je.StdOut)
 			if je.Event == "playbook_on_stats" {
 				logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
