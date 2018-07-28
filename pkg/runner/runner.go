@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,61 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
-
-// EventTime - time to unmarshal nano time.
-type EventTime struct {
-	time.Time
-}
-
-// UnmarshalJSON - override unmarshal json.
-func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
-	e.Time, err = time.Parse("2006-01-02T15:04:05.999999999", strings.Trim(string(b[:]), "\"\\"))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON - override the marshal json.
-func (e EventTime) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))), nil
-}
-
-// JobEvent - event of an ansible run.
-type JobEvent struct {
-	UUID      string                 `json:"uuid"`
-	Counter   int                    `json:"counter"`
-	StdOut    string                 `json:"stdout"`
-	StartLine int                    `json:"start_line"`
-	EndLine   int                    `json:"EndLine"`
-	Event     string                 `json:"event"`
-	EventData map[string]interface{} `json:"event_data"`
-	PID       int                    `json:"pid"`
-	Created   EventTime              `json:"created"`
-}
-
-// StatusJobEvent - event of an ansible run.
-type StatusJobEvent struct {
-	UUID      string         `json:"uuid"`
-	Counter   int            `json:"counter"`
-	StdOut    string         `json:"stdout"`
-	StartLine int            `json:"start_line"`
-	EndLine   int            `json:"EndLine"`
-	Event     string         `json:"event"`
-	EventData StatsEventData `json:"event_data"`
-	PID       int            `json:"pid"`
-	Created   EventTime      `json:"created"`
-}
-
-// StatsEventData - data for a the status event.
-type StatsEventData struct {
-	Playbook     string         `json:"playbook"`
-	PlaybookUUID string         `json:"playbook_uuid"`
-	Changed      map[string]int `json:"changed"`
-	Ok           map[string]int `json:"ok"`
-	Failures     map[string]int `json:"failures"`
-	Skipped      map[string]int `json:"skipped"`
-}
 
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
@@ -105,42 +49,58 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 	ident := rand.Int()
 	logrus.Infof("running: %v for playbook: %v", ident, p.Path)
 
-	dc := exec.Command("ansible-runner", "-vv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
+	dc := exec.Command("ansible-runner", "-vvvvv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
+	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
+	dc.Env = append(os.Environ(), fmt.Sprintf("CALLBACK_SOCKET=%v/%v.sock", runnerSandbox, ident))
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
-	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
-	err = dc.Run()
+	errChannel := make(chan error)
+	cancel := make(chan struct{})
+	w, err := NewWatcher(runnerSandbox, fmt.Sprintf("%v", ident))
 	if err != nil {
 		return nil, err
 	}
-	logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
-	logrus.Infof("collecting results for run %v", ident)
-
-	eventFiles, err := ioutil.ReadDir(fmt.Sprintf("%v/artifacts/%v/job_events", runnerSandbox, ident))
-	if err != nil {
-		return nil, err
+	go func() {
+		err := dc.Run()
+		errChannel <- err
+	}()
+	for {
+		select {
+		case je := <-w.JobEvents:
+			logrus.Infof("event UUID: %v event: %v stdout: %v", je.UUID, je.Event, je.StdOut)
+			if je.Event == "playbook_on_stats" {
+				logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
+				logrus.Infof("collecting results for run %v", ident)
+				d, err := json.Marshal(je)
+				if err != nil {
+					return nil, err
+				}
+				o := &StatusJobEvent{}
+				err = json.Unmarshal(d, o)
+				if err != nil {
+					return nil, err
+				}
+				cancel <- struct{}{}
+				return o, nil
+			}
+		case err := <-errChannel:
+			if err != nil {
+				cancel <- struct{}{}
+				return nil, err
+			}
+		case <-time.After(10 * time.Minute):
+			cancel <- struct{}{}
+			return nil, fmt.Errorf("timeout of 10 minutes was reached")
+		}
 	}
-	if len(eventFiles) == 0 {
-		return nil, fmt.Errorf("Unable to read event data")
-	}
-	sort.Sort(fileInfos(eventFiles))
-	//get the last event, which should be a status.
-	d, err := ioutil.ReadFile(fmt.Sprintf("%v/artifacts/%v/job_events/%v", runnerSandbox, ident, eventFiles[len(eventFiles)-1].Name()))
-	if err != nil {
-		return nil, err
-	}
-	o := &StatusJobEvent{}
-	err = json.Unmarshal(d, o)
-	if err != nil {
-		return nil, err
-	}
-	return o, nil
 }
 
 // Role - role type of runner
 type Role struct {
 	name string
 }
+
+// Helper functions for the runner.
 
 func createRunnerEnvironment(parameters []byte, runnerSandbox, configPath string) error {
 	err := os.MkdirAll(fmt.Sprintf("%v/env", runnerSandbox), os.ModePerm)
