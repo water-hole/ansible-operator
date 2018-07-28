@@ -62,13 +62,7 @@ class CallbackModule(CallbackBase):
             data = json.dumps(data)
 
 
-        self._display.vvvv("here")
         msg = to_bytes("{}\n".format(data))
-        self.sock.sendall(msg)
-
-    def endlog(self):
-        self._display.vvvv("end log here")
-        msg = to_bytes("endfile")
         self.sock.sendall(msg)
 
 
@@ -92,7 +86,3 @@ class CallbackModule(CallbackBase):
 
     def playbook_on_not_import_for_host(self, host, missing_file):
         self.log(host, 'NOTIMPORTED', missing_file)
-
-    def playbook_on_stats(self, stats):
-        self.log(host, "OK", stats)
-        self.endlog()

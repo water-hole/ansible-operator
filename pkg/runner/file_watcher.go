@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -39,14 +40,23 @@ func NewWatcher(runnerSandbox, socket string) (*Watcher, error) {
 
 	go func() {
 		defer ln.Close()
-		done := make(chan struct{})
-		con, err := ln.Accept()
-		if err != nil {
-			logrus.Errorf("unable to connect to the socket - %v", err)
+		for {
+			con, err := ln.Accept()
+			if err != nil {
+				logrus.Errorf("unable to connect to the socket- %v", err)
+				return
+			}
+			d := make(chan struct{})
+			go handleConnection(c, con, d)
+			select {
+			case <-d:
+				logrus.Infof("done")
+				return
+			case <-time.After(10 * time.Minute):
+				logrus.Infof("Timed out waiting for reading of connection.")
+				return
+			}
 		}
-
-		go handleConnection(c, con, done)
-		<-done
 	}()
 
 	return &Watcher{
@@ -59,22 +69,23 @@ func NewWatcher(runnerSandbox, socket string) (*Watcher, error) {
 
 func handleConnection(c chan *JobEvent, con net.Conn, done chan struct{}) {
 	for {
-		buf := []byte{}
-		i, err := con.Read(buf)
+		r := bufio.NewReader(con)
+		l, err := r.ReadString('\n')
 		if err != nil {
-			logrus.Errorf("uanble to connect to the socket - %v", err)
-		}
-		data := buf[0:i]
-		if string(data) == SocketEndString {
-			done <- struct{}{}
+			logrus.Errorf("uanble to read the socket - %v", err)
 			return
 		}
-		jobevent := &JobEvent{}
-		err = json.Unmarshal(data, jobevent)
-		if err != nil {
-			logrus.Errorf("unable to unmarshal - %v", err)
+		if strings.TrimSpace(l) == SocketEndString {
+			done <- struct{}{}
+			logrus.Infof("received the last event")
+			return
 		}
-		c <- jobevent
+		m := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			logrus.Infof("l - %v err - %v", l, err)
+			continue
+		}
+		logrus.Infof("!!!!!!!!!!_________ %v------!!!!!!!!", m)
 	}
 }
 

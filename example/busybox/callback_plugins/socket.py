@@ -60,6 +60,9 @@ class CallbackModule(CallbackBase):
             data['host'] = host
             data['time'] = now
             data = json.dumps(data)
+        else:
+            self._display.vvvv("return")
+            return
 
 
         self._display.vvvv("here")
@@ -68,7 +71,7 @@ class CallbackModule(CallbackBase):
 
     def endlog(self):
         self._display.vvvv("end log here")
-        msg = to_bytes("endfile")
+        msg = to_bytes("endfile\n")
         self.sock.sendall(msg)
 
 
@@ -94,5 +97,5 @@ class CallbackModule(CallbackBase):
         self.log(host, 'NOTIMPORTED', missing_file)
 
     def playbook_on_stats(self, stats):
-        self.log(host, "OK", stats)
+        self.log("", "OK", stats)
         self.endlog()

@@ -49,8 +49,11 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 	ident := rand.Int()
 	logrus.Infof("running: %v for playbook: %v", ident, p.Path)
 
-	dc := exec.Command("ansible-runner", "-vv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
+	dc := exec.Command("ansible-runner", "-vvvvv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
 	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
+	dc.Env = append(os.Environ(), fmt.Sprintf("CALLBACK_SOCKET=%v/%v.sock", runnerSandbox, ident))
+	dc.Stdout = os.Stdout
+	dc.Stderr = os.Stderr
 	errChannel := make(chan error)
 	cancel := make(chan struct{})
 	w, err := NewWatcher(runnerSandbox, fmt.Sprintf("%v", ident))
