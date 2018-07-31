@@ -33,6 +33,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
 		return nil
 	}
+	logrus.Infof("Recieved event for name: %v in namespace: %v for gvk: %v", u.GetName, u.GetNamespace, u.GetObjectKind().GroupVersionKind())
 	ownerRef := metav1.OwnerReference{
 		APIVersion: u.GetAPIVersion(),
 		Kind:       u.GetKind(),

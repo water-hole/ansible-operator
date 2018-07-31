@@ -1,4 +1,4 @@
-FROM quay.io/shawnhurley/ansible-operator
+FROM docker.io/shurley/ansible-operator-test
 
 COPY busybox/ /opt/ansible/roles/busybox/
 COPY playbook.yaml /opt/ansible/playbook.yaml

@@ -59,6 +59,10 @@ func main() {
 	}
 }
 
+func decoder(gv schema.GroupVersion) k8sruntime.Decoder {
+	return k8sutil.GetCodecs().UniversalDeserializer()
+}
+
 // readConfig reads the operator's config file at /opt/ansible/config.yaml
 func readConfig() ([]config, error) {
 	b, err := ioutil.ReadFile("/opt/ansible/config.yaml")
@@ -96,6 +100,7 @@ func runSDK(done chan error) {
 		return
 	}
 	rand.Seed(time.Now().Unix())
+	k8sutil.SetDecoderFunc(decoder)
 
 	m := map[schema.GroupVersionKind]runner.Runner{}
 

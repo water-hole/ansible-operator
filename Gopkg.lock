@@ -114,15 +114,17 @@
   revision = "cca7078d478f8520f85629ad7c68962d31ed7682"
 
 [[projects]]
-  branch = "master"
+  branch = "config-decoder"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/k8sclient",
     "pkg/sdk",
+    "pkg/sdk/internal/metrics",
     "pkg/util/k8sutil",
     "version"
   ]
-  revision = "3ac731fc3bea56e357d3596f014ac5bb4a13a0bc"
+  revision = "c207f2be08ec3d5ea7055d5ab3495f8ba94ae2b4"
+  source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]
   name = "github.com/prometheus/client_golang"
@@ -389,6 +391,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "047a8f70ccfaaabbd1c84b7bf85bf468d71d9350dab7b4d32f0efc955e884b8a"
+  inputs-digest = "74288788fdf2092ae1aaf349519cf0c397cdf076e1e9ad5fcb75ffaf33d007ac"
   solver-name = "gps-cdcl"
   solver-version = 1
