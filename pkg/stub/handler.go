@@ -4,10 +4,10 @@ import (
 	"context"
 	"os"
 
-	"github.com/automationbroker/ansible-operator/pkg/kubeconfig"
-	"github.com/automationbroker/ansible-operator/pkg/runner"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
+	"github.com/water-hole/ansible-operator/pkg/kubeconfig"
+	"github.com/water-hole/ansible-operator/pkg/runner"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"

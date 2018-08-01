@@ -21,5 +21,3 @@ To run this operator, you can do the following:
 4. `kubectl create -f deploy/cr.yaml`
 
 You should then see the operator creating resources in response to the CR's creation.
-
-#### If you are checking this code out to build it or use it, you need to clone the repo into the github.com/automationbroker folder in your gopath

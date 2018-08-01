@@ -1,7 +1,7 @@
 language: go
 sudo: required
 
-go_import_path: github.com/automationbroker/ansible-operator
+go_import_path: github.com/water-hole/ansible-operator
 
 env:
   - CHANGE_MINIKUBE_NONE_USER=true
@@ -28,7 +28,7 @@ install:
 
 script:
   # test builds work
-  - cd $GOPATH/src/github.com/automationbroker/ansible-operator
+  - cd $GOPATH/src/github.com/water-hole/ansible-operator
   - operator-sdk build quay.io/shawn_hurley/ansible-operator
 
   # create example CRD and operator
