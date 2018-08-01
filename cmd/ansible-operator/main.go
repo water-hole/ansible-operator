@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 
 	"github.com/sirupsen/logrus"
 )
@@ -59,8 +60,8 @@ func main() {
 	}
 }
 
-func decoder(gv schema.GroupVersion) k8sruntime.Decoder {
-	return k8sutil.GetCodecs().UniversalDeserializer()
+func decoder(gv schema.GroupVersion, codecs serializer.CodecFactory) k8sruntime.Decoder {
+	return codecs.UniversalDeserializer()
 }
 
 // readConfig reads the operator's config file at /opt/ansible/config.yaml

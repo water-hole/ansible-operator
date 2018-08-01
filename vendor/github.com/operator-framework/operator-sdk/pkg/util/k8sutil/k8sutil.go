@@ -46,21 +46,17 @@ func init() {
 	cgoscheme.AddToScheme(scheme)
 }
 
-// UtilDecoderFunc finds the correct decoder from a GroupVersion
-type UtilDecoderFunc func(gv schema.GroupVersion) runtime.Decoder
+// UtilDecoderFunc retrieve the correct decoder from a GroupVersion
+// and the schemes codec factory.
+type UtilDecoderFunc func(schema.GroupVersion, serializer.CodecFactory) runtime.Decoder
 
 // SetDecoderFunc sets a non default decoder function
+// This is used as a work around to add support for unstructured objects
 func SetDecoderFunc(u UtilDecoderFunc) {
 	decoderFunc = u
 }
 
-func GetCodecs() serializer.CodecFactory {
-	return codecs
-
-}
-
-// decoder - default decoder.
-func decoder(gv schema.GroupVersion) runtime.Decoder {
+func decoder(gv schema.GroupVersion, codecs serializer.CodecFactory) runtime.Decoder {
 	codec := codecs.UniversalDecoder(gv)
 	return codec
 }
@@ -75,7 +71,7 @@ func AddToSDKScheme(addToScheme addToSchemeFunc) {
 // RuntimeObjectFromUnstructured converts an unstructured to a runtime object
 func RuntimeObjectFromUnstructured(u *unstructured.Unstructured) runtime.Object {
 	gvk := u.GroupVersionKind()
-	decoder := decoderFunc(gvk.GroupVersion())
+	decoder := decoderFunc(gvk.GroupVersion(), codecs)
 
 	b, err := u.MarshalJSON()
 	if err != nil {
@@ -106,7 +102,7 @@ func UnstructuredFromRuntimeObject(ro runtime.Object) *unstructured.Unstructured
 // TODO: https://github.com/operator-framework/operator-sdk/issues/127
 func UnstructuredIntoRuntimeObject(u *unstructured.Unstructured, into runtime.Object) error {
 	gvk := u.GroupVersionKind()
-	decoder := decoderFunc(gvk.GroupVersion())
+	decoder := decoderFunc(gvk.GroupVersion(), codecs)
 
 	b, err := u.MarshalJSON()
 	if err != nil {
@@ -126,7 +122,7 @@ func RuntimeObjectIntoRuntimeObject(from runtime.Object, into runtime.Object) er
 		return err
 	}
 	gvk := from.GetObjectKind().GroupVersionKind()
-	decoder := decoderFunc(gvk.GroupVersion())
+	decoder := decoderFunc(gvk.GroupVersion(), codecs)
 	_, _, err = decoder.Decode(b, &gvk, into)
 	if err != nil {
 		return fmt.Errorf("failed to decode json data with gvk(%v): %v", gvk.String(), err)

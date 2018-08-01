@@ -123,7 +123,7 @@
     "pkg/util/k8sutil",
     "version"
   ]
-  revision = "c207f2be08ec3d5ea7055d5ab3495f8ba94ae2b4"
+  revision = "ed39331a5a4cab323bae0471788ef8ba89d5091a"
   source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]
