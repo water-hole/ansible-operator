@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 
 	"github.com/sirupsen/logrus"
 )
@@ -81,7 +82,18 @@ func registerGVK(gvk schema.GroupVersionKind) {
 	k8sutil.AddToSDKScheme(schemeBuilder.AddToScheme)
 }
 
+// Used to set the decoder to just deserialize instead of decode.
+// This is only need as a work around for now and when the SDK is based on
+// controller-runtime we expect this to be fixed.
+// This issue https://github.com/operator-framework/operator-sdk/issues/382
+// is tracking this process.
+func decoder(gv schema.GroupVersion, codecs serializer.CodecFactory) k8sruntime.Decoder {
+	return codecs.UniversalDeserializer()
+}
+
 func runSDK(done chan error) {
+	// setting the utility decoder function.
+	k8sutil.SetDecoderFunc(decoder)
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		logrus.Error("Failed to get watch namespace")
