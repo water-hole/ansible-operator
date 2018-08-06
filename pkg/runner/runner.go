@@ -87,7 +87,7 @@ type Playbook struct {
 // Run - This should allow the playbook runner to run.
 func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
-	runnerSandbox := fmt.Sprintf("/home/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
+	runnerSandbox := fmt.Sprintf("/tmp/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
 	b, err := json.Marshal(parameters)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 	ident := rand.Int()
 	logrus.Infof("running: %v for playbook: %v", ident, p.Path)
 
-	dc := exec.Command("ansible-runner", "-vv", "-p", "playbook.yaml", "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
+	dc := exec.Command("ansible-runner", "-vv", "-p", p.Path, "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
 	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
