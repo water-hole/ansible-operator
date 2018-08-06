@@ -1,8 +1,8 @@
-# Ansible Operator: A Operator Backed by Ansible
+# Ansible Operator: An Operator Backed by Ansible
 
 ### Project Status: pre-alpha
 
-The project is currently pre-alpha and it is expected that breaking changes to the API will be made in the upcoming releases.
+The project is currently pre-alpha, and it is expected that breaking changes to the API will be made in the upcoming releases.
 
 ## Example of how to use the Ansible Operator
 
@@ -94,17 +94,10 @@ a python virtualenv. In that case, add these lines to your playbook:
 
 To run this operator locally, you can do the following:
 
-<<<<<<< HEAD
-1. Start a kubernetes cluster, possibly with minikube
-2. `kubectl create -f example/deploy/crd.yaml`
-3. `operator-sdk up local`
-4. `kubectl create -f example/deploy/cr.yaml`
-=======
 1. Start a kubernetes cluster, possibly with [minikube][1]
 2. `kubectl create -f deploy/crd.yaml`
-3. Start the operator using the operator-sdk's documentation. To run locally, try `operator-sdk up local`
+3. `operator-sdk up local`
 4. `kubectl create -f deploy/cr.yaml`
->>>>>>> updating the readme to be a better landing page.
 
 You should then see the operator creating resources in response to the CR's creation.
 
@@ -118,17 +111,17 @@ It is an CentOS based ansible-runner image, with the operator installed.
 
 This image should be used as a base image. An example of this can be found [here](example/Dockerfile)
 
-The Operator expects a config file to be copied into the container a predefined location: /opt/ansible/config.yaml
+The Operator expects a config file to be copied into the container at a predefined location: /opt/ansible/config.yaml
 
 Example:
 ```Dockerfile
 COPY config.yaml /opt/ansible/config.yaml
 ```
 
-The Config files format is yaml and is an array of objects. The object has mandatory fields:
+The Config file format is yaml and is an array of objects. The object has mandatory fields:
 	version: The version of the Custom Resource that you will be watching.
 	group: The group of the Custom Resource that you will be watching.
-	kind: The kind of the custom resource that you will be watching.
+	kind: The kind of the Custom Resource that you will be watching.
 	path:  This is the path to the playbook that you have added to the container. This playbook is expected to be simply a way to call roles.
   name: is an identifier for this combination of gvk(group, version, kind) and the path to the playbook.
 ```yaml
@@ -140,18 +133,21 @@ The Config files format is yaml and is an array of objects. The object has manda
   path: /opt/ansible/roles/busybox/playbook.yaml
 ```
 
-The operator expects that the ansible can handle extra vars to take parameters from the spec of the CRD and that it is idempotent and should be expected to be called often and without changes.
+The operator expects that the ansible
+* can handle extra vars to take parameters from the spec of the CRD
+* that it is idempotent
+* should be expected to be called often and without changes
 
 #### Deploying your new Ansible Operator.
 
 To deploy your ansible operator you will need to do 3 things.
-Setup the RBAC permissions for the service account that the operator will run as.
-Deploy the CRD into the cluster.
-Deploy the operator deployment into the cluster.
+1. Setup the RBAC permissions for the service account that the operator will run as.
+2. Deploy the CRD into the cluster.
+3. Deploy the operator deployment into the cluster.
 
 ##### RBAC Permissions
 
-RBAC is the way to define permissions for user/service account in kubernetes. The permissions in the example does two different things it creates a Role and a Role Binding. The role contains the permissions, in this example we grant access to many of the “core” resources (pods,secrets,services) as well as the apps resources (deployments…). The third thing this role grants access to is the group: “app.example.com”. This is where you should state your group that you are using for the CRD. Here is the example that will help you run the operator in [minikube][1].
+RBAC is the way to define permissions for a user/service account in kubernetes. The permissions in the example do two different things; create a Role and create a Role Binding. In this example we grant access to many of the “core” resources (pods,secrets,services) as well as the apps resources (deployments…). The third thing this role grants access to is the group: “app.example.com”. This is where you should state your group that you are using for the CRD. Here is the example that will help you run the operator in [minikube][1].
 
 ```yaml
 kind: Role
@@ -201,7 +197,7 @@ roleRef:
 ```
 
 ##### Install the CRD into the Cluster
-The CRD or Custom Resource Definition is a key extension point in kubernetes. Here you define a new resource type, Kubernetes will handle saving and persisting this resource definition. Here is some documentation on CRDs: https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/
+The CRD or Custom Resource Definition is a key extension point in kubernetes. Here you define a new resource type, and Kubernetes will handle saving and persisting this resource definition. Here is some documentation on CRDs: https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/
 An example below will work with the busybox role and rbac roles above.
 ```yaml
 apiVersion: apiextensions.k8s.io/v1beta1
@@ -241,7 +237,7 @@ spec:
     spec:
       containers:
         - name: ansible-operator
-          image: docker.io/shurley/busybox-ansible-operator
+          image: quay.io/water-hole/busybox-ansible-operator
           command:
           - ansible-operator
           imagePullPolicy: Always
