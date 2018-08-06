@@ -88,7 +88,7 @@ type Playbook struct {
 func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
 	runnerSandbox := fmt.Sprintf("/tmp/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
-	b, err := json.Marshal(parameters)
+	b, err := json.Marshal(MapToSnake(parameters))
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func createRunnerEnvironment(parameters []byte, runnerSandbox, configPath string
 		fmt.Sprintf("---\nK8S_AUTH_KUBECONFIG=%s", configPath)), 0644,
 	)
 	if err != nil {
-		logrus.Errorf("unable to create extravars file - %v", runnerSandbox)
+		logrus.Errorf("unable to create envvars file - %v", runnerSandbox)
 		return err
 	}
 	err = os.MkdirAll(fmt.Sprintf("%v/project", runnerSandbox), os.ModePerm)
@@ -167,7 +167,7 @@ func createRunnerEnvironment(parameters []byte, runnerSandbox, configPath string
 	}
 	err = ioutil.WriteFile(fmt.Sprintf("%v/inventory/hosts", runnerSandbox), []byte("localhost ansible_connection=local"), 0644)
 	if err != nil {
-		logrus.Errorf("unable to create extravars file - %v", runnerSandbox)
+		logrus.Errorf("unable to create hosts file - %v", runnerSandbox)
 		return err
 	}
 	err = ioutil.WriteFile(fmt.Sprintf("%v/env/extravars", runnerSandbox), parameters, 0644)
