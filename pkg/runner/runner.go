@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/water-hole/ansible-operator/pkg/paramconv"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -88,7 +89,7 @@ type Playbook struct {
 func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
 	runnerSandbox := fmt.Sprintf("/tmp/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
-	b, err := json.Marshal(MapToSnake(parameters))
+	b, err := json.Marshal(paramconv.MapToSnake(parameters))
 	if err != nil {
 		return nil, err
 	}

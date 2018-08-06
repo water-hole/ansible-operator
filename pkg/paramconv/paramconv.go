@@ -1,5 +1,5 @@
 // Based on https://github.com/iancoleman/strcase
-package runner
+package paramconv
 
 import (
 	"regexp"
