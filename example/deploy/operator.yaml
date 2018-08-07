@@ -15,8 +15,6 @@ spec:
       containers:
         - name: ansible-operator
           image: docker.io/shurley/busybox-ansible-operator-test
-          command:
-          - ansible-operator
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
