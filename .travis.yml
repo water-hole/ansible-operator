@@ -6,15 +6,6 @@ go_import_path: github.com/water-hole/ansible-operator
 env:
   - CHANGE_MINIKUBE_NONE_USER=true
 
-before_script:
-  # setup minikube
-  - curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-  - curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.25.2/minikube-linux-amd64 && chmod +x minikube && sudo mv minikube /usr/local/bin/
-  - sudo minikube start --vm-driver=none --kubernetes-version=v1.9.0
-  - minikube update-context
-  # Wait until node is ready
-  - JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}'; until kubectl get nodes -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do sleep 1; done
-
 install:
   # setup operator-sdk
   - go get github.com/golang/dep/cmd/dep
@@ -25,64 +16,88 @@ install:
   - git checkout master
   - make dep
   - make install
-
-script:
-  # test builds work
   - cd $GOPATH/src/github.com/water-hole/ansible-operator
   - operator-sdk build quay.io/water-hole/ansible-operator
 
-  # create example CRD and operator
-  - pushd example
-  - kubectl create -f deploy/rbac.yaml
-  - kubectl create -f deploy/crd.yaml
-  - kubectl create -f deploy/operator.yaml
+jobs:
+  include:
+    - stage: test
+      before_script:
+        # setup minikube
+        - curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+        - curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.25.2/minikube-linux-amd64 && chmod +x minikube && sudo mv minikube /usr/local/bin/
+        - sudo minikube start --vm-driver=none --kubernetes-version=v1.9.0
+        - minikube update-context
+        # Wait until node is ready
+        - JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}'; until kubectl get nodes -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do sleep 1; done
+      script:
+        # create example CRD and operator
+        - pushd example
+        - kubectl create -f deploy/rbac.yaml
+        - kubectl create -f deploy/crd.yaml
+        - kubectl create -f deploy/operator.yaml
 
-  # wait for operator pod to run
-  - pod=$(kubectl get pods | grep ansible-operator)
-  - |
-    while [[ "${pod}" != *"Running"* ]]; do
-      kubectl get pods
-      pod=$(kubectl get pods | grep ansible-operator)
-    done
-  - pod=$(echo $pod | awk '{print $1}')
-  - kubectl logs $pod
+        # wait for operator pod to run
+        - pod=$(kubectl get pods | grep ansible-operator)
+        - |
+          while [[ "${pod}" != *"Running"* ]]; do
+            kubectl get pods
+            pod=$(kubectl get pods | grep ansible-operator)
+          done
+        - pod=$(echo $pod | awk '{print $1}')
+        - kubectl logs $pod
 
-  # set a test string, build example operator from previously built base image
-  - sed -i s/hello\ world/travis\ test/g busybox/defaults/main.yml
-  - docker build -t busybox-ansible-operator-test:test .
-  - kubectl patch deployment ansible-operator -p '{"spec":{"template":{"spec":{"containers":[{"name":"ansible-operator","imagePullPolicy":"Never"}]}}}}'
-  - kubectl set image deployment/ansible-operator *=busybox-ansible-operator-test:test
+        # set a test string, build example operator from previously built base image
+        - sed -i s/hello\ world/travis\ test/g busybox/defaults/main.yml
+        - docker build -t busybox-ansible-operator-test:test .
+        - kubectl patch deployment ansible-operator -p '{"spec":{"template":{"spec":{"containers":[{"name":"ansible-operator","imagePullPolicy":"Never"}]}}}}'
+        - kubectl set image deployment/ansible-operator *=busybox-ansible-operator-test:test
 
-  # wait for new operator pod
-  - kubectl get pods
-  - sleep 5
-  - pod=$(kubectl get pods | grep ansible-operator)
-  - |
-    while [[ "${pod}" != *"Running"* ]]; do
-      kubectl get pods
-      pod=$(kubectl get pods | grep ansible-operator)
-    done
-  - pod=$(echo $pod | awk '{print $1}')
-  - kubectl logs $pod
+        # wait for new operator pod
+        - kubectl get pods
+        - sleep 5
+        - pod=$(kubectl get pods | grep ansible-operator)
+        - |
+          while [[ "${pod}" != *"Running"* ]]; do
+            kubectl get pods
+            pod=$(kubectl get pods | grep ansible-operator)
+          done
+        - pod=$(echo $pod | awk '{print $1}')
+        - kubectl logs $pod
 
-  # deploy example resource and check for test string
-  - kubectl create -f deploy/cr.yaml
-  - pod=$(kubectl get pods | grep example-busybox || true)
-  - echo $pod
-  - |
-    while [[ "${pod}" != *"Running"* ]]; do
-      kubectl get pods
-      pod=$(kubectl get pods | grep example-busybox)
-    done
-  - kubectl get pods
-  - pod=$(echo $pod | awk '{print $1}')
-  - kubectl logs $pod | grep "travis test"
+        # deploy example resource and check for test string
+        - kubectl create -f deploy/cr.yaml
+        - pod=$(kubectl get pods | grep example-busybox || true)
+        - echo $pod
+        - |
+          while [[ "${pod}" != *"Running"* ]]; do
+            kubectl get pods
+            pod=$(kubectl get pods | grep example-busybox)
+          done
+        - kubectl get pods
+        - pod=$(echo $pod | awk '{print $1}')
+        - kubectl logs $pod | grep "travis test"
 
-deploy:
-  provider: script
-  script: bash echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin && \
-          docker push quay.io/water-hole/ansible-operator && \
-          docker tag busybox-ansible-operator-test:test quay.io/water-hole/busybox-ansible-operator && \
-          docker push quay.io/water-hole/busybox-ansible-operator
-  on:
-    branch: master
+    - stage: deploy
+      script:
+        - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io
+        - docker tag quay.io/water-hole/ansible-operator quay.io/water-hole/ansible-operator
+        - docker push quay.io/water-hole/ansible-operator
+        - cd $GOPATH/src/github.com/water-hole/ansible-operator/example
+        - docker build -t quay.io/water-hole/busybox-ansible-operator .
+        - docker push quay.io/water-hole/busybox-ansible-operator
+
+    - stage: deploy-release
+      script:
+        - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io
+        - docker tag quay.io/water-hole/ansible-operator quay.io/water-hole/ansible-operator:${TRAVIS_TAG}
+        - docker push quay.io/water-hole/ansible-operator:${TRAVIS_TAG}
+        - cd $GOPATH/src/github.com/water-hole/ansible-operator/example
+        - docker build -t quay.io/water-hole/busybox-ansible-operator:${TRAVIS_TAG} .
+        - docker push quay.io/water-hole/busybox-ansible-operator:${TRAVIS_TAG}
+stages:
+  - test
+  - name: deploy
+    if: (tag IS blank) AND (branch = master)
+  - name: deploy-release
+    if: (tag IS present)
