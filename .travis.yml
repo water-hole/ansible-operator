@@ -29,7 +29,7 @@ install:
 script:
   # test builds work
   - cd $GOPATH/src/github.com/water-hole/ansible-operator
-  - operator-sdk build quay.io/shawn_hurley/ansible-operator
+  - operator-sdk build quay.io/water-hole/ansible-operator
 
   # create example CRD and operator
   - pushd example
@@ -77,3 +77,13 @@ script:
   - kubectl get pods
   - pod=$(echo $pod | awk '{print $1}')
   - kubectl logs $pod | grep "travis test"
+
+deploy:
+  provider: script
+  script:
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker push quay.io/water-hole/ansible-operator
+    - docker tag busybox-ansible-operator-test:test quay.io/water-hole/busybox-ansible-operator
+    - docker push quay.io/water-hole/busybox-ansible-operator
+  on:
+    branch: master
