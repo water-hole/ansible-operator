@@ -98,6 +98,6 @@ jobs:
 stages:
   - test
   - name: deploy
-    if: (tag IS blank) AND (branch = master)
+    if: (tag IS blank) AND (branch = master) AND (type = push)
   - name: deploy-release
-    if: (tag IS present)
+    if: (tag IS present) AND (type = push)
