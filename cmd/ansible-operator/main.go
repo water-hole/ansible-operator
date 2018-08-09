@@ -12,9 +12,9 @@ import (
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	handler "github.com/water-hole/ansible-operator/pkg/handler"
 	proxy "github.com/water-hole/ansible-operator/pkg/proxy"
 	"github.com/water-hole/ansible-operator/pkg/runner"
-	stub "github.com/water-hole/ansible-operator/pkg/stub"
 	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -126,7 +126,7 @@ func runSDK(done chan error) {
 		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
 
 	}
-	sdk.Handle(stub.NewHandler(m))
+	sdk.Handle(handler.New(m))
 	sdk.Run(context.TODO())
 	done <- nil
 }
