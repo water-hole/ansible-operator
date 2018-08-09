@@ -123,7 +123,7 @@
     "pkg/util/k8sutil",
     "version"
   ]
-  revision = "f7627c69befe257cf783bac4fdccecdf66b93f36"
+  revision = "efc31221e6aa7f668bb9b3538b7d185bafa74061"
 
 [[projects]]
   name = "github.com/prometheus/client_golang"
