@@ -82,13 +82,21 @@ func runSDK(done chan error) {
 	}
 	rand.Seed(time.Now().Unix())
 
-	for gvk, _ := range configs {
+	for gvk := range configs {
 		logrus.Infof("Watching %s/%v, %s, %s, %d", gvk.Group, gvk.Version, gvk.Kind, namespace, resyncPeriod)
 		registerGVK(gvk)
 		sdk.Watch(fmt.Sprintf("%v/%v", gvk.Group, gvk.Version), gvk.Kind, namespace, resyncPeriod)
 
 	}
-	sdk.Handle(handler.New(configs))
+	h, err := handler.New(handler.Options{
+		GVKToRunner: configs,
+	})
+	if err != nil {
+		logrus.Errorf("unable to create ansible handler - %v", err)
+		done <- err
+		return
+	}
+	sdk.Handle(h)
 	sdk.Run(context.TODO())
 	done <- nil
 }

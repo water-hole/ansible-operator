@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -13,21 +14,21 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func New(m map[schema.GroupVersionKind]runner.Runner) sdk.Handler {
-	return &Handler{crdToPlaybook: m}
+// Interface used to handle a runner event. This will be called if a mapping is found
+// for the GVK of the event.
+type Interface interface {
+	Handle(context.Context, sdk.Event, runner.Runner) error
 }
 
-type Handler struct {
-	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
-	// Fill me
+// InterfaceFunc is a adapter to use functions as handlers.
+type InterfaceFunc func(context.Context, sdk.Event, runner.Runner) error
+
+// Handle calls f(ctx, event, run)
+func (f InterfaceFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner) error {
+	return f(ctx, event, run)
 }
 
-func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
-	p, ok := h.crdToPlaybook[event.Object.GetObjectKind().GroupVersionKind()]
-	if !ok {
-		logrus.Warnf("unable to find playbook mapping for gvk: %v", event.Object.GetObjectKind().GroupVersionKind())
-		return nil
-	}
+func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) error {
 	u, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
@@ -54,7 +55,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
 		return nil
 	}
-	statusEvent, err := p.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
+	statusEvent, err := run.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
 	if err != nil {
 		return err
 	}
@@ -74,4 +75,37 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		return nil
 	}
 	return nil
+}
+
+// Options will be used to tell the new ansible handler how to behave.
+type Options struct {
+	Handle      Interface
+	GVKToRunner map[schema.GroupVersionKind]runner.Runner
+}
+
+// New will create a ansible handler to be used by the sdk.
+func New(options Options) (sdk.Handler, error) {
+	if len(options.GVKToRunner) == 0 {
+		return nil, fmt.Errorf("options must contain a gvk runner mapping")
+	}
+	var handle Interface = InterfaceFunc(defaultHandle)
+	if options.Handle != nil {
+		handle = options.Handle
+	}
+	return &handler{crdToPlaybook: options.GVKToRunner, handle: handle}, nil
+}
+
+type handler struct {
+	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
+	handle        Interface
+}
+
+// Handle conform to the sdk.Handle interface.
+func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
+	p, ok := h.crdToPlaybook[event.Object.GetObjectKind().GroupVersionKind()]
+	if !ok {
+		logrus.Warnf("unable to find playbook mapping for gvk: %v", event.Object.GetObjectKind().GroupVersionKind())
+		return nil
+	}
+	return h.handle.Handle(ctx, event, p)
 }
