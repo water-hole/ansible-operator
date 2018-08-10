@@ -21,4 +21,4 @@
             - name: test
               image: "busybox"
               command: ["/bin/sh"]
-              args: ["-c", "while true; do echo {{ message|quote }}; sleep {{ delay | int }} ;done"]
+              args: ["-c", "while true; do echo {{ message|quote }}; sleep {{ echo_delay | int }} ;done"]

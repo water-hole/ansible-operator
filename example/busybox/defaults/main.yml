@@ -3,4 +3,4 @@
 meta:
   namespace: default
 message: hello world
-delay: 10
+echo_delay: 10
