@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: ansible-operator
-          image: docker.io/shurley/testing-ao
+          image: quay.io/water-hole/ansible-operator
           ports:
           - containerPort: 60000
             name: metrics
