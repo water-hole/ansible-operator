@@ -17,6 +17,7 @@ type InputDir struct {
 	RolePath     string
 	Parameters   map[string]interface{}
 	EnvVars      map[string]string
+	Settings     map[string]string
 }
 
 // makeDirs creates the required directory structure.
@@ -52,6 +53,10 @@ func (i *InputDir) Write() error {
 	if err != nil {
 		return err
 	}
+	settingsBytes, err := json.Marshal(i.Settings)
+	if err != nil {
+		return err
+	}
 
 	err = i.makeDirs()
 	if err != nil {
@@ -63,6 +68,10 @@ func (i *InputDir) Write() error {
 		return err
 	}
 	err = i.addFile("env/extravars", paramBytes)
+	if err != nil {
+		return err
+	}
+	err = i.addFile("env/settings", settingsBytes)
 	if err != nil {
 		return err
 	}
