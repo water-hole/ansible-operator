@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"runtime"
 	"time"
@@ -15,7 +14,6 @@ import (
 	handler "github.com/water-hole/ansible-operator/pkg/handler"
 	proxy "github.com/water-hole/ansible-operator/pkg/proxy"
 	"github.com/water-hole/ansible-operator/pkg/runner"
-	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,17 +26,6 @@ func printVersion() {
 	logrus.Infof("Go Version: %s", runtime.Version())
 	logrus.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
 	logrus.Infof("operator-sdk Version: %v", sdkVersion.Version)
-}
-
-type config struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-	Group   string `yaml:"group"`
-	Kind    string `yaml:"kind"`
-	// Command to execute.
-	//Command string `yaml:"command"`
-	// Path that will be passed to the command.
-	Path string `yaml:"path"`
 }
 
 func main() {
@@ -58,20 +45,6 @@ func main() {
 	} else {
 		logrus.Fatal(err.Error())
 	}
-}
-
-// readConfig reads the operator's config file at /opt/ansible/config.yaml
-func readConfig() ([]config, error) {
-	b, err := ioutil.ReadFile("/opt/ansible/config.yaml")
-	if err != nil {
-		logrus.Fatalf("failed to get config file %v", err)
-	}
-	c := []config{}
-	err = yaml.Unmarshal(b, &c)
-	if err != nil {
-		logrus.Fatalf("failed to unmarshal config %v", err)
-	}
-	return c, nil
 }
 
 func registerGVK(gvk schema.GroupVersionKind) {
@@ -101,7 +74,7 @@ func runSDK(done chan error) {
 		return
 	}
 	resyncPeriod := 60
-	configs, err := readConfig()
+	configs, err := runner.NewFromConfig("/opt/ansible/config.yaml")
 	if err != nil {
 		logrus.Error("Failed to get configs")
 		done <- err
@@ -109,24 +82,13 @@ func runSDK(done chan error) {
 	}
 	rand.Seed(time.Now().Unix())
 
-	m := map[schema.GroupVersionKind]runner.Runner{}
-
-	for _, c := range configs {
-		logrus.Infof("Watching %s/%v, %s, %s, %d path: %v", c.Group, c.Version, c.Kind, namespace, resyncPeriod, c.Path)
-		s := schema.GroupVersionKind{
-			Group:   c.Group,
-			Version: c.Version,
-			Kind:    c.Kind,
-		}
-		registerGVK(s)
-		m[s] = &runner.Playbook{
-			Path: c.Path,
-			GVK:  s,
-		}
-		sdk.Watch(fmt.Sprintf("%v/%v", c.Group, c.Version), c.Kind, namespace, resyncPeriod)
+	for gvk, _ := range configs {
+		logrus.Infof("Watching %s/%v, %s, %s, %d", gvk.Group, gvk.Version, gvk.Kind, namespace, resyncPeriod)
+		registerGVK(gvk)
+		sdk.Watch(fmt.Sprintf("%v/%v", gvk.Group, gvk.Version), gvk.Kind, namespace, resyncPeriod)
 
 	}
-	sdk.Handle(handler.New(m))
+	sdk.Handle(handler.New(configs))
 	sdk.Run(context.TODO())
 	done <- nil
 }

@@ -2,76 +2,21 @@ package runner
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
+	"errors"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/water-hole/ansible-operator/pkg/paramconv"
+	"github.com/water-hole/ansible-operator/pkg/runner/internal/inputdir"
+	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
-
-// EventTime - time to unmarshal nano time.
-type EventTime struct {
-	time.Time
-}
-
-// UnmarshalJSON - override unmarshal json.
-func (e *EventTime) UnmarshalJSON(b []byte) (err error) {
-	e.Time, err = time.Parse("2006-01-02T15:04:05.999999999", strings.Trim(string(b[:]), "\"\\"))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON - override the marshal json.
-func (e EventTime) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%s\"", e.Time.Format("2006-01-02T15:04:05.99999999"))), nil
-}
-
-// JobEvent - event of an ansible run.
-type JobEvent struct {
-	UUID      string                 `json:"uuid"`
-	Counter   int                    `json:"counter"`
-	StdOut    string                 `json:"stdout"`
-	StartLine int                    `json:"start_line"`
-	EndLine   int                    `json:"EndLine"`
-	Event     string                 `json:"event"`
-	EventData map[string]interface{} `json:"event_data"`
-	PID       int                    `json:"pid"`
-	Created   EventTime              `json:"created"`
-}
-
-// StatusJobEvent - event of an ansible run.
-type StatusJobEvent struct {
-	UUID      string         `json:"uuid"`
-	Counter   int            `json:"counter"`
-	StdOut    string         `json:"stdout"`
-	StartLine int            `json:"start_line"`
-	EndLine   int            `json:"EndLine"`
-	Event     string         `json:"event"`
-	EventData StatsEventData `json:"event_data"`
-	PID       int            `json:"pid"`
-	Created   EventTime      `json:"created"`
-}
-
-// StatsEventData - data for a the status event.
-type StatsEventData struct {
-	Playbook     string         `json:"playbook"`
-	PlaybookUUID string         `json:"playbook_uuid"`
-	Changed      map[string]int `json:"changed"`
-	Ok           map[string]int `json:"ok"`
-	Failures     map[string]int `json:"failures"`
-	Skipped      map[string]int `json:"skipped"`
-}
 
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
@@ -79,54 +24,119 @@ type Runner interface {
 	Run(map[string]interface{}, string, string, string) (*StatusJobEvent, error)
 }
 
-// Playbook - playbook type of runner.
-type Playbook struct {
-	Path string
-	GVK  schema.GroupVersionKind
+// watch holds data used to create a mapping of GVK to ansible playbook or role.
+// The mapping is used to compose an ansible operator.
+type watch struct {
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
+	Group   string `yaml:"group"`
+	Kind    string `yaml:"kind"`
+	Path    string `yaml:"path"`
 }
 
-// Run - This should allow the playbook runner to run.
-func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
-	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
-	runnerSandbox := fmt.Sprintf("/tmp/ansible-operator/runner/%s/%s/%s/%s/%s", p.GVK.Group, p.GVK.Version, p.GVK.Kind, namespace, name)
-	b, err := json.Marshal(paramconv.MapToSnake(parameters))
+// NewFromConfig reads the operator's config file at the provided path.
+func NewFromConfig(path string) (map[schema.GroupVersionKind]Runner, error) {
+	b, err := ioutil.ReadFile(path)
 	if err != nil {
+		logrus.Errorf("failed to get config file %v", err)
 		return nil, err
 	}
-	//Write parameters to correct file on disk
-	err = createRunnerEnvironment(b, runnerSandbox, kubeconfig)
+	watches := []watch{}
+	err = yaml.Unmarshal(b, &watches)
 	if err != nil {
+		logrus.Errorf("failed to unmarshal config %v", err)
 		return nil, err
 	}
-	//copy playbook from the path to the project of the runnerEnvironment
-	err = copyFile(p.Path, fmt.Sprintf("%v/project/playbook.yaml", runnerSandbox))
-	if err != nil {
-		return nil, err
-	}
-	ident := rand.Int()
-	logrus.Infof("running: %v for playbook: %v", ident, p.Path)
 
-	dc := exec.Command("ansible-runner", "-vv", "-p", p.Path, "-i", fmt.Sprintf("%v", ident), "run", runnerSandbox)
-	dc.Stdout = os.Stdout
-	dc.Stderr = os.Stderr
-	dc.Env = append(os.Environ(), fmt.Sprintf("K8S_AUTH_KUBECONFIG=%s", kubeconfig))
+	m := map[schema.GroupVersionKind]Runner{}
+	for _, w := range watches {
+		s := schema.GroupVersionKind{
+			Group:   w.Group,
+			Version: w.Version,
+			Kind:    w.Kind,
+		}
+		m[s] = NewForPlaybook(w.Path, s)
+	}
+	return m, nil
+}
+
+// NewForRole returns a new Runner based on the path to an ansible playbook.
+func NewForPlaybook(path string, gvk schema.GroupVersionKind) Runner {
+	return &runner{
+		Path: path,
+		GVK:  gvk,
+		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
+			dc := exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
+			dc.Stdout = os.Stdout
+			dc.Stderr = os.Stderr
+			return dc
+		},
+	}
+}
+
+// NewForRole returns a new Runner based on the path to an ansible role.
+func NewForRole(path string, gvk schema.GroupVersionKind) Runner {
+	return &runner{
+		Path: path,
+		GVK:  gvk,
+		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
+			// FIXME the below command does not fully work
+			dc := exec.Command("ansible-runner", "-vv", "--role", "busybox", "--roles-path", "/opt/ansible/roles/", "--hosts", "localhost", "-i", ident, "run", inputDirPath)
+			dc.Stdout = os.Stdout
+			dc.Stderr = os.Stderr
+			return dc
+		},
+	}
+}
+
+// runner - implements the Runner interface for a GVK that's being watched.
+type runner struct {
+	Path    string                                     // path on disk to a playbook or role depending on what cmdFunc expects
+	GVK     schema.GroupVersionKind                    // GVK being watched that corresponds to the Path
+	cmdFunc func(ident, inputDirPath string) *exec.Cmd // returns a Cmd that runs ansible-runner
+}
+
+// Run uses the runner with the given input and returns a status.
+func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
+	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
+	inputDir := inputdir.InputDir{
+		Path:         filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, namespace, name),
+		PlaybookPath: r.Path,
+		Parameters:   paramconv.MapToSnake(parameters),
+		EnvVars: map[string]string{
+			"K8S_AUTH_KUBECONFIG": kubeconfig,
+		},
+	}
+	err := inputDir.Write()
+	if err != nil {
+		return nil, err
+	}
+
+	ident := strconv.Itoa(rand.Int())
+	dc := r.cmdFunc(ident, inputDir.Path)
 	err = dc.Run()
 	if err != nil {
 		return nil, err
 	}
-	logrus.Infof("ran: %v for playbook: %v", ident, p.Path)
+
+	return jobStatus(inputDir.Path, ident)
+}
+
+// Status returns the final status from ansible-runner. The implementation will change to use an
+// event API instead of the filesystem inspection seen below.
+func jobStatus(path, ident string) (*StatusJobEvent, error) {
 	logrus.Infof("collecting results for run %v", ident)
 
-	eventFiles, err := ioutil.ReadDir(fmt.Sprintf("%v/artifacts/%v/job_events", runnerSandbox, ident))
+	eventFiles, err := ioutil.ReadDir(filepath.Join(path, "artifacts", ident, "job_events"))
 	if err != nil {
 		return nil, err
 	}
 	if len(eventFiles) == 0 {
-		return nil, fmt.Errorf("Unable to read event data")
+		return nil, errors.New("Unable to read event data")
 	}
 	sort.Sort(fileInfos(eventFiles))
 	//get the last event, which should be a status.
-	d, err := ioutil.ReadFile(fmt.Sprintf("%v/artifacts/%v/job_events/%v", runnerSandbox, ident, eventFiles[len(eventFiles)-1].Name()))
+	d, err := ioutil.ReadFile(filepath.Join(path, "artifacts/", ident, "job_events", eventFiles[len(eventFiles)-1].Name()))
 	if err != nil {
 		return nil, err
 	}
@@ -136,90 +146,4 @@ func (p *Playbook) Run(parameters map[string]interface{}, name, namespace, kubec
 		return nil, err
 	}
 	return o, nil
-}
-
-// Role - role type of runner
-type Role struct {
-	name string
-}
-
-func createRunnerEnvironment(parameters []byte, runnerSandbox, configPath string) error {
-	err := os.MkdirAll(fmt.Sprintf("%v/env", runnerSandbox), os.ModePerm)
-	if err != nil {
-		logrus.Errorf("unable to create runner directory - %v", runnerSandbox)
-		return err
-	}
-	err = ioutil.WriteFile(fmt.Sprintf("%v/env/envvars", runnerSandbox), []byte(
-		fmt.Sprintf("---\nK8S_AUTH_KUBECONFIG=%s", configPath)), 0644,
-	)
-	if err != nil {
-		logrus.Errorf("unable to create envvars file - %v", runnerSandbox)
-		return err
-	}
-	err = os.MkdirAll(fmt.Sprintf("%v/project", runnerSandbox), os.ModePerm)
-	if err != nil {
-		logrus.Errorf("unable to create project directory - %v", runnerSandbox)
-		return err
-	}
-	err = os.MkdirAll(fmt.Sprintf("%v/inventory", runnerSandbox), os.ModePerm)
-	if err != nil {
-		logrus.Errorf("unable to create inventory directory - %v", runnerSandbox)
-		return err
-	}
-	err = ioutil.WriteFile(fmt.Sprintf("%v/inventory/hosts", runnerSandbox), []byte("localhost ansible_connection=local"), 0644)
-	if err != nil {
-		logrus.Errorf("unable to create hosts file - %v", runnerSandbox)
-		return err
-	}
-	err = ioutil.WriteFile(fmt.Sprintf("%v/env/extravars", runnerSandbox), parameters, 0644)
-	if err != nil {
-		logrus.Errorf("unable to create extravars file - %v", runnerSandbox)
-		return err
-	}
-	return nil
-}
-
-// Copy the src file to dst. Any existing file will be overwritten and will not
-// copy file attributes.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-	return out.Close()
-}
-
-type fileInfos []os.FileInfo
-
-func (f fileInfos) Len() int {
-	return len(f)
-}
-
-func (f fileInfos) Swap(i, j int) {
-	f[i], f[j] = f[j], f[i]
-}
-
-func (f fileInfos) Less(i, j int) bool {
-	//Strip into part of filename
-	iInt, err := strconv.Atoi(strings.Split(f[i].Name(), "-")[0])
-	if err != nil {
-		return false
-	}
-	jInt, err := strconv.Atoi(strings.Split(f[j].Name(), "-")[0])
-	if err != nil {
-		return false
-	}
-	return iInt < jInt
 }
