@@ -11,27 +11,17 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
-	"strings"
 
+	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/sirupsen/logrus"
-	yaml "gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
-}
-
-func injectOwnerReference(h http.Handler) http.Handler {
+// InjectOwnerReferenceHandler will handle proxied requests and inject the
+// owner refernece found in the authorization header. The Authorization is
+// then deleted so that the proxy can re-set with the correct authorization.
+func InjectOwnerReferenceHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
 			logrus.Info("injecting owner reference")
@@ -64,8 +54,8 @@ func injectOwnerReference(h http.Handler) http.Handler {
 				http.Error(w, m, http.StatusInternalServerError)
 				return
 			}
-			var data unstructured.Unstructured
-			err = unmarshal(body, &data.Object)
+			data := &unstructured.Unstructured{}
+			err = json.Unmarshal(body, data)
 			if err != nil {
 				m := "could not deserialize request body"
 				logrus.Errorf("%s: %s", err.Error())
@@ -90,46 +80,44 @@ func injectOwnerReference(h http.Handler) http.Handler {
 	})
 }
 
-// unmarshal YAML to map[string]interface{} instead of map[interface{}]interface{}.
-func unmarshal(in []byte, out interface{}) error {
-	var res map[string]interface{}
+// HandlerChain will be used for users to pass defined handlers to the proxy.
+// The hander chain will be run after InjectingOwnerReference if it is added
+// and before the proxy handler.
+type HandlerChain func(http.Handler) http.Handler
 
-	if err := yaml.Unmarshal(in, &res); err != nil {
-		return err
-	}
-	*out.(*map[string]interface{}) = cleanupMapValue(res).(map[string]interface{})
-
-	return nil
+// Options will be used by the user to specify the desired details
+// for the proxy.
+type Options struct {
+	Address          string
+	Port             int
+	Handler          HandlerChain
+	NoOwnerInjection bool
 }
 
-func cleanupInterfaceArray(in []interface{}) []interface{} {
-	res := make([]interface{}, len(in))
-	for i, v := range in {
-		res[i] = cleanupMapValue(v)
-	}
-	return res
-}
+// RunProxy will start a proxy server in a go routine and return on the error
+// channel if something is not correct on startup.
+func RunProxy(done chan error, o Options) {
+	clientConfig := k8sclient.GetKubeConfig()
 
-func cleanupInterfaceMap(in map[interface{}]interface{}) map[string]interface{} {
-	res := make(map[string]interface{})
-	for k, v := range in {
-		res[fmt.Sprintf("%v", k)] = cleanupMapValue(v)
+	server, err := newServer("/", clientConfig)
+	if err != nil {
+		done <- err
+		return
 	}
-	return res
-}
+	if o.Handler != nil {
+		server.Handler = o.Handler(server.Handler)
+	}
 
-func cleanupMapValue(v interface{}) interface{} {
-	switch v := v.(type) {
-	case map[string]interface{}:
-		for key, val := range v {
-			v[key] = cleanupMapValue(val)
-		}
-		return v
-	case []interface{}:
-		return cleanupInterfaceArray(v)
-	case map[interface{}]interface{}:
-		return cleanupInterfaceMap(v)
-	default:
-		return v
+	if !o.NoOwnerInjection {
+		server.Handler = InjectOwnerReferenceHandler(server.Handler)
 	}
+	l, err := server.Listen(o.Address, o.Port)
+	if err != nil {
+		done <- err
+		return
+	}
+	go func() {
+		logrus.Infof("Starting to serve on %s\n", l.Addr().String())
+		done <- server.ServeOnListener(l)
+	}()
 }

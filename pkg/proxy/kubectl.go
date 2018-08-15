@@ -149,8 +149,8 @@ func (f *FilterServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 // Server is a http.Handler which proxies Kubernetes APIs to remote API server.
-type Server struct {
-	handler http.Handler
+type server struct {
+	Handler http.Handler
 }
 
 type responder struct{}
@@ -186,7 +186,7 @@ func makeUpgradeTransport(config *rest.Config) (k8sproxy.UpgradeRequestRoundTrip
 }
 
 // NewServer creates and installs a new Server.
-func NewServer(apiProxyPrefix string, cfg *rest.Config) (*Server, error) {
+func newServer(apiProxyPrefix string, cfg *rest.Config) (*server, error) {
 	host := cfg.Host
 	if !strings.HasSuffix(host, "/") {
 		host = host + "/"
@@ -215,20 +215,20 @@ func NewServer(apiProxyPrefix string, cfg *rest.Config) (*Server, error) {
 		proxyServer = stripLeaveSlash(apiProxyPrefix, proxyServer)
 	}
 
-	proxyServer = injectOwnerReference(proxyServer)
+	///	proxyServer = handler(proxyServer)
 
 	mux := http.NewServeMux()
 	mux.Handle(apiProxyPrefix, proxyServer)
-	return &Server{handler: mux}, nil
+	return &server{Handler: mux}, nil
 }
 
 // Listen is a simple wrapper around net.Listen.
-func (s *Server) Listen(address string, port int) (net.Listener, error) {
+func (s *server) Listen(address string, port int) (net.Listener, error) {
 	return net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 }
 
 // ListenUnix does net.Listen for a unix socket
-func (s *Server) ListenUnix(path string) (net.Listener, error) {
+func (s *server) ListenUnix(path string) (net.Listener, error) {
 	// Remove any socket, stale or not, but fall through for other files
 	fi, err := os.Stat(path)
 	if err == nil && (fi.Mode()&os.ModeSocket) != 0 {
@@ -242,9 +242,9 @@ func (s *Server) ListenUnix(path string) (net.Listener, error) {
 }
 
 // ServeOnListener starts the server using given listener, loops forever.
-func (s *Server) ServeOnListener(l net.Listener) error {
+func (s *server) ServeOnListener(l net.Listener) error {
 	server := http.Server{
-		Handler: s.handler,
+		Handler: s.Handler,
 	}
 	return server.Serve(l)
 }
