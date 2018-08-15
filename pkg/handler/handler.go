@@ -14,20 +14,20 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// Interface used to handle a runner event. This will be called if a
+// EventHandler used to handle a runner event. This will be called if a
 // mapping is found for the GVK of the event. This will be used as an override
 // for the default handle implementation. To set this for the handler, set the
 // options Handle with your implementation of this interface, and it will be
 // used.
-type Interface interface {
+type EventHandler interface {
 	Handle(context.Context, sdk.Event, runner.Runner) error
 }
 
-// InterfaceFunc is a adapter to use functions as handlers.
-type InterfaceFunc func(context.Context, sdk.Event, runner.Runner) error
+// EventHandlerFunc is a adapter to use functions as handlers.
+type EventHandlerFunc func(context.Context, sdk.Event, runner.Runner) error
 
 // Handle calls f(ctx, event, run)
-func (f InterfaceFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner) error {
+func (f EventHandlerFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner) error {
 	return f(ctx, event, run)
 }
 
@@ -85,7 +85,7 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 // The GVKToRunner map must be passed in and must have at least a single
 // mapping.
 type Options struct {
-	Handle      Interface
+	Handle      EventHandler
 	GVKToRunner map[schema.GroupVersionKind]runner.Runner
 }
 
@@ -97,7 +97,7 @@ func New(options Options) (sdk.Handler, error) {
 	if len(options.GVKToRunner) == 0 {
 		return nil, fmt.Errorf("options must contain a gvk runner mapping")
 	}
-	var handle Interface = InterfaceFunc(defaultHandle)
+	var handle EventHandler = EventHandlerFunc(defaultHandle)
 	if options.Handle != nil {
 		handle = options.Handle
 	}
@@ -106,7 +106,7 @@ func New(options Options) (sdk.Handler, error) {
 
 type handler struct {
 	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
-	handle        Interface
+	handle        EventHandler
 }
 
 // Handle conform to the sdk.Handle interface.
