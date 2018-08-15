@@ -123,7 +123,7 @@
     "pkg/util/k8sutil",
     "version"
   ]
-  revision = "efc31221e6aa7f668bb9b3538b7d185bafa74061"
+  revision = "a1c118101808ee96bea11036bb20f632705f82c8"
 
 [[projects]]
   name = "github.com/prometheus/client_golang"
@@ -390,6 +390,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "cae4e512b24c1eccb16f6785b7f4dae905a65932c5a3bb213b564345f6252a6d"
+  inputs-digest = "4aa0027a61dcb090aa6905012433a0a966dab99239ac6b848be24c79b3ed5939"
   solver-name = "gps-cdcl"
   solver-version = 1
