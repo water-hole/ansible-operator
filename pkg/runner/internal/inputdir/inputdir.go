@@ -2,6 +2,7 @@ package inputdir
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -65,7 +66,15 @@ func (i *InputDir) Write() error {
 	if err != nil {
 		return err
 	}
-	err = i.addFile("inventory/hosts", []byte("localhost ansible_connection=local"))
+
+	// If ansible-runner is running in a python virtual environment, propagate
+	// that to ansible.
+	venv := os.Getenv("VIRTUAL_ENV")
+	hosts := "localhost ansible_connection=local"
+	if venv != "" {
+		hosts = fmt.Sprintf("%s ansible_python_interpreter=%s", hosts, filepath.Join(venv, "bin/python"))
+	}
+	err = i.addFile("inventory/hosts", []byte(hosts))
 	if err != nil {
 		return err
 	}
