@@ -215,8 +215,6 @@ func newServer(apiProxyPrefix string, cfg *rest.Config) (*server, error) {
 		proxyServer = stripLeaveSlash(apiProxyPrefix, proxyServer)
 	}
 
-	///	proxyServer = handler(proxyServer)
-
 	mux := http.NewServeMux()
 	mux.Handle(apiProxyPrefix, proxyServer)
 	return &server{Handler: mux}, nil
