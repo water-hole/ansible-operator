@@ -125,6 +125,7 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 			"runner_http_path": receiver.URLPath,
 		},
 	}
+	err = inputDir.Write()
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interfa
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
 	if !ok {
-		logrus.Warnf("spec was not found")
+		logrus.Warnf("spec was not found for CR:%v - %v in %v", u.GroupVersionKind(), u.GetNamespace(), u.GetName())
 		spec = map[string]interface{}{}
 	}
 	parameters := paramconv.MapToSnake(spec)
