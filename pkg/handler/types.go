@@ -1,18 +1,22 @@
-package runner
+package handler
+
+import (
+	"github.com/water-hole/ansible-operator/pkg/runner"
+)
 
 const (
 	host = "localhost"
 )
 
 type Status struct {
-	Ok               int       `json:"ok"`
-	Changed          int       `json:"changed"`
-	Skipped          int       `json:"skipped"`
-	Failures         int       `json:"failures"`
-	TimeOfCompletion EventTime `json:"completion"`
+	Ok               int              `json:"ok"`
+	Changed          int              `json:"changed"`
+	Skipped          int              `json:"skipped"`
+	Failures         int              `json:"failures"`
+	TimeOfCompletion runner.EventTime `json:"completion"`
 }
 
-func NewStatusFromStatusJobEvent(je *StatusJobEvent) Status {
+func NewStatusFromStatusJobEvent(je *runner.StatusJobEvent) Status {
 	// ok events.
 	o := 0
 	changed := 0
@@ -50,7 +54,7 @@ func NewStatusFromMap(sm map[string]interface{}) Status {
 	changed := 0
 	skipped := 0
 	failures := 0
-	e := EventTime{}
+	e := runner.EventTime{}
 	if v, ok := sm["changed"]; ok {
 		changed = int(v.(int64))
 	}
@@ -82,7 +86,7 @@ type ResourceStatus struct {
 	History        []Status `json:"history,omitempty"`
 }
 
-func UpdateResourceStatus(sm map[string]interface{}, je *StatusJobEvent) (bool, ResourceStatus) {
+func UpdateResourceStatus(sm map[string]interface{}, je *runner.StatusJobEvent) (bool, ResourceStatus) {
 	newStatus := NewStatusFromStatusJobEvent(je)
 	oldStatus := NewStatusFromMap(sm)
 	// Don't update the status if new status and old status are equal.
