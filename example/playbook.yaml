@@ -2,6 +2,7 @@
   roles:
   - busybox
   tasks:
-  - debug: msg=test
+  - debug:
+      msg: "{{ _app_example_com_database }}"
   - import_role:
       name: "busybox"

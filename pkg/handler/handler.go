@@ -40,6 +40,15 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
 		return nil
 	}
+	//Default spec to empty map.
+	s := u.Object["spec"]
+	_, ok = s.(map[string]interface{})
+	if !ok {
+		logrus.Warnf("spec was not found")
+		u.Object["spec"] = map[string]interface{}{}
+		sdk.Update(u)
+		return nil
+	}
 	ownerRef := metav1.OwnerReference{
 		APIVersion: u.GetAPIVersion(),
 		Kind:       u.GetKind(),
@@ -52,16 +61,7 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 		return err
 	}
 	defer os.Remove(kc.Name())
-
-	s := u.Object["spec"]
-	spec, ok := s.(map[string]interface{})
-	if !ok {
-		u.Object["spec"] = map[string]interface{}{}
-		sdk.Update(u)
-		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
-		return nil
-	}
-	eventChan, err := run.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
+	eventChan, err := run.Run(u, kc.Name())
 	if err != nil {
 		return err
 	}
