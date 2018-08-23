@@ -1,9 +1,7 @@
-package runner
+package eventapi
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -61,27 +59,4 @@ type StatsEventData struct {
 	Ok           map[string]int `json:"ok"`
 	Failures     map[string]int `json:"failures"`
 	Skipped      map[string]int `json:"skipped"`
-}
-
-type fileInfos []os.FileInfo
-
-func (f fileInfos) Len() int {
-	return len(f)
-}
-
-func (f fileInfos) Swap(i, j int) {
-	f[i], f[j] = f[j], f[i]
-}
-
-func (f fileInfos) Less(i, j int) bool {
-	//Strip into part of filename
-	iInt, err := strconv.Atoi(strings.Split(f[i].Name(), "-")[0])
-	if err != nil {
-		return false
-	}
-	jInt, err := strconv.Atoi(strings.Split(f[j].Name(), "-")[0])
-	if err != nil {
-		return false
-	}
-	return iInt < jInt
 }

@@ -1,7 +1,7 @@
 FROM ansible/ansible-runner
 
 RUN pip install --upgrade setuptools
-RUN pip install openshift
+RUN pip install openshift ansible-runner-http
 
 RUN echo "localhost ansible_connection=local" > /etc/ansible/hosts \
     && echo '[defaults]' > /etc/ansible/ansible.cfg \

@@ -1,18 +1,17 @@
 package runner
 
 import (
-	"encoding/json"
-	"errors"
 	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
 	"github.com/water-hole/ansible-operator/pkg/paramconv"
+	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
 	"github.com/water-hole/ansible-operator/pkg/runner/internal/inputdir"
 	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -21,7 +20,7 @@ import (
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
 type Runner interface {
-	Run(map[string]interface{}, string, string, string) (*StatusJobEvent, error)
+	Run(map[string]interface{}, string, string, string) (chan eventapi.JobEvent, error)
 }
 
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
@@ -97,8 +96,24 @@ type runner struct {
 }
 
 // Run uses the runner with the given input and returns a status.
-func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (*StatusJobEvent, error) {
+func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (chan eventapi.JobEvent, error) {
 	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
+	ident := strconv.Itoa(rand.Int())
+	logger := logrus.WithFields(logrus.Fields{
+		"component": "runner",
+		"job":       ident,
+		"name":      name,
+		"namespace": namespace,
+	})
+
+	// start the event receiver. We'll check errChan for an error after
+	// ansible-runner exits.
+	errChan := make(chan error, 1)
+	receiver, err := eventapi.New(ident, errChan)
+	if err != nil {
+		return nil, err
+	}
+
 	inputDir := inputdir.InputDir{
 		Path:         filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, namespace, name),
 		PlaybookPath: r.Path,
@@ -106,44 +121,32 @@ func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubecon
 		EnvVars: map[string]string{
 			"K8S_AUTH_KUBECONFIG": kubeconfig,
 		},
+		Settings: map[string]string{
+			"runner_http_url":  receiver.SocketPath,
+			"runner_http_path": receiver.URLPath,
+		},
 	}
-	err := inputDir.Write()
+	err = inputDir.Write()
 	if err != nil {
 		return nil, err
 	}
 
-	ident := strconv.Itoa(rand.Int())
-	dc := r.cmdFunc(ident, inputDir.Path)
-	err = dc.Run()
-	if err != nil {
-		return nil, err
-	}
+	go func() {
+		dc := r.cmdFunc(ident, inputDir.Path)
+		err := dc.Run()
+		if err != nil {
+			logger.Errorf("error from ansible-runner: %s", err.Error())
+		} else {
+			logger.Info("ansible-runner exited successfully")
+		}
 
-	return jobStatus(inputDir.Path, ident)
-}
+		receiver.Close()
+		err = <-errChan
+		// http.Server returns this in the case of being closed cleanly
+		if err != nil && err != http.ErrServerClosed {
+			logger.Errorf("error from event api: %s", err.Error())
+		}
+	}()
 
-// Status returns the final status from ansible-runner. The implementation will change to use an
-// event API instead of the filesystem inspection seen below.
-func jobStatus(path, ident string) (*StatusJobEvent, error) {
-	logrus.Infof("collecting results for run %v", ident)
-
-	eventFiles, err := ioutil.ReadDir(filepath.Join(path, "artifacts", ident, "job_events"))
-	if err != nil {
-		return nil, err
-	}
-	if len(eventFiles) == 0 {
-		return nil, errors.New("Unable to read event data")
-	}
-	sort.Sort(fileInfos(eventFiles))
-	//get the last event, which should be a status.
-	d, err := ioutil.ReadFile(filepath.Join(path, "artifacts/", ident, "job_events", eventFiles[len(eventFiles)-1].Name()))
-	if err != nil {
-		return nil, err
-	}
-	o := &StatusJobEvent{}
-	err = json.Unmarshal(d, o)
-	if err != nil {
-		return nil, err
-	}
-	return o, nil
+	return receiver.Events, nil
 }

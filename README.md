@@ -82,9 +82,10 @@ cp example/playbook.yaml /opt/anisble/
 cp -a example/busybox /opt/ansible/roles/
 ```
 
-Ensure that ansible and ansible-runner (>= 1.0.5) are installed. Consider using
-a python virtualenv. If you run the operator in a shell with an active virtualenv,
-that will be propagated to ansible-runner and ansible.
+Ensure that ansible, ansible-runner (>= 1.1.0), and ansible-runner-http are
+installed. Consider using a python virtualenv. If you run the operator in a
+shell with an active virtualenv, that will be propagated to ansible-runner and
+ansible.
 
 ### Run
 

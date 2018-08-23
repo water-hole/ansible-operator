@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/water-hole/ansible-operator/pkg/proxy/kubeconfig"
 	"github.com/water-hole/ansible-operator/pkg/runner"
+	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -58,10 +61,32 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 		logrus.Warnf("spec is not a map[string]interface{} - %#v", s)
 		return nil
 	}
-	statusEvent, err := run.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
+	eventChan, err := run.Run(spec, u.GetName(), u.GetNamespace(), kc.Name())
 	if err != nil {
 		return err
 	}
+
+	// iterate events from ansible, looking for the final one
+	statusEvent := eventapi.StatusJobEvent{}
+	for event := range eventChan {
+		if event.Event == "playbook_on_stats" {
+			// convert to StatusJobEvent; would love a better way to do this
+			data, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			err = json.Unmarshal(data, &statusEvent)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if statusEvent.Event == "" {
+		err := errors.New("did not receive playbook_on_stats event")
+		logrus.Error(err.Error())
+		return err
+	}
+
 	statusMap, ok := u.Object["status"].(map[string]interface{})
 	if !ok {
 		u.Object["status"] = ResourceStatus{
