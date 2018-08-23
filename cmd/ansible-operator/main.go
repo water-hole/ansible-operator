@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -33,7 +32,10 @@ func main() {
 	done := make(chan error)
 
 	// start the proxy
-	go runProxy("localhost", 8888, done)
+	proxy.RunProxy(done, proxy.Options{
+		Address: "localhost",
+		Port:    8888,
+	})
 
 	// start the operator
 	go runSDK(done)
@@ -99,21 +101,4 @@ func runSDK(done chan error) {
 	sdk.Handle(h)
 	sdk.Run(context.TODO())
 	done <- nil
-}
-
-func runProxy(address string, port int, done chan error) {
-	clientConfig := k8sclient.GetKubeConfig()
-
-	server, err := proxy.NewServer("/", clientConfig)
-	if err != nil {
-		done <- err
-		return
-	}
-	l, err := server.Listen(address, port)
-	if err != nil {
-		done <- err
-		return
-	}
-	logrus.Infof("Starting to serve on %s\n", l.Addr().String())
-	done <- server.ServeOnListener(l)
 }
