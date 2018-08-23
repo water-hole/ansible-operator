@@ -42,6 +42,9 @@ type EventReceiver struct {
 
 	// ident is the unique identifier for a particular run of ansible-runner
 	ident string
+
+	// logger holds a logger that has some fields already set
+	logger logrus.FieldLogger
 }
 
 func New(ident string, errChan chan<- error) (*EventReceiver, error) {
@@ -56,6 +59,10 @@ func New(ident string, errChan chan<- error) (*EventReceiver, error) {
 		SocketPath: sockPath,
 		URLPath:    "/events/",
 		ident:      ident,
+		logger: logrus.WithFields(logrus.Fields{
+			"component": "eventapi",
+			"job":       ident,
+		}),
 	}
 
 	mux := http.NewServeMux()
@@ -75,27 +82,23 @@ func (e *EventReceiver) Close() {
 	e.mutex.Lock()
 	e.stopped = true
 	e.mutex.Unlock()
-	logrus.Debug("event API stopped")
+	e.logger.Debug("event API stopped")
 	e.server.Close()
 	close(e.Events)
 }
 
 func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
-	logger := logrus.WithFields(logrus.Fields{
-		"component": "eventapi",
-		"job":       e.ident,
-	})
 
 	if r.URL.Path != e.URLPath {
 		http.NotFound(w, r)
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "404",
 		}).Infof("path not found: %s\n", r.URL.Path)
 		return
 	}
 
 	if r.Method != http.MethodPost {
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "405",
 		}).Infof("method %s not allowed", r.Method)
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -104,7 +107,7 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	ct := r.Header.Get("content-type")
 	if strings.Split(ct, ";")[0] != "application/json" {
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "415",
 		}).Info("wrong content type: %s", ct)
 		w.WriteHeader(http.StatusUnsupportedMediaType)
@@ -114,7 +117,7 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "500",
 		}).Errorf("%s", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -124,7 +127,7 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 	event := JobEvent{}
 	err = json.Unmarshal(body, &event)
 	if err != nil {
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "400",
 		}).Infof("could not deserialize body: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
@@ -139,7 +142,7 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if e.stopped {
 		e.mutex.RUnlock()
 		w.WriteHeader(http.StatusGone)
-		logger.WithFields(logrus.Fields{
+		e.logger.WithFields(logrus.Fields{
 			"code": "410",
 		}).Info("stopped and not accepting additional events for this job")
 		return
@@ -149,14 +152,14 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 		// we're not currently interested in.
 		// https://ansible-runner.readthedocs.io/en/latest/external_interface.html#event-structure
 		if event.UUID == "" {
-			logger.Info("dropping event that is not a JobEvent")
+			e.logger.Info("dropping event that is not a JobEvent")
 		} else {
 			// timeout if the channel blocks for too long
 			timeout := time.NewTimer(10 * time.Second)
 			select {
 			case e.Events <- event:
 			case <-timeout.C:
-				logger.WithFields(logrus.Fields{
+				e.logger.WithFields(logrus.Fields{
 					"code": "500",
 				}).Warn("timed out writing event to channel")
 				w.WriteHeader(http.StatusInternalServerError)

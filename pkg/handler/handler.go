@@ -90,14 +90,14 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 	statusMap, ok := u.Object["status"].(map[string]interface{})
 	if !ok {
 		u.Object["status"] = ResourceStatus{
-			Status: NewStatusFromStatusJobEvent(&statusEvent),
+			Status: NewStatusFromStatusJobEvent(statusEvent),
 		}
 		sdk.Update(u)
 		logrus.Infof("adding status for the first time")
 		return nil
 	}
 	// Need to conver the map[string]interface into a resource status.
-	if update, status := UpdateResourceStatus(statusMap, &statusEvent); update {
+	if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
 		u.Object["status"] = status
 		sdk.Update(u)
 		return nil

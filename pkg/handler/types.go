@@ -16,7 +16,7 @@ type Status struct {
 	TimeOfCompletion eventapi.EventTime `json:"completion"`
 }
 
-func NewStatusFromStatusJobEvent(je *eventapi.StatusJobEvent) Status {
+func NewStatusFromStatusJobEvent(je eventapi.StatusJobEvent) Status {
 	// ok events.
 	o := 0
 	changed := 0
@@ -86,7 +86,7 @@ type ResourceStatus struct {
 	History        []Status `json:"history,omitempty"`
 }
 
-func UpdateResourceStatus(sm map[string]interface{}, je *eventapi.StatusJobEvent) (bool, ResourceStatus) {
+func UpdateResourceStatus(sm map[string]interface{}, je eventapi.StatusJobEvent) (bool, ResourceStatus) {
 	newStatus := NewStatusFromStatusJobEvent(je)
 	oldStatus := NewStatusFromMap(sm)
 	// Don't update the status if new status and old status are equal.

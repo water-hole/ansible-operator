@@ -102,6 +102,8 @@ func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubecon
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "runner",
 		"job":       ident,
+		"name":      name,
+		"namespace": namespace,
 	})
 
 	// start the event receiver. We'll check errChan for an error after
