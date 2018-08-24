@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -8,19 +9,21 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/water-hole/ansible-operator/pkg/paramconv"
 	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
 	"github.com/water-hole/ansible-operator/pkg/runner/internal/inputdir"
 	yaml "gopkg.in/yaml.v2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
 type Runner interface {
-	Run(map[string]interface{}, string, string, string) (chan eventapi.JobEvent, error)
+	Run(*unstructured.Unstructured, string) (chan eventapi.JobEvent, error)
 }
 
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
@@ -59,7 +62,7 @@ func NewFromConfig(path string) (map[schema.GroupVersionKind]Runner, error) {
 	return m, nil
 }
 
-// NewForRole returns a new Runner based on the path to an ansible playbook.
+// NewForPlaybook returns a new Runner based on the path to an ansible playbook.
 func NewForPlaybook(path string, gvk schema.GroupVersionKind) Runner {
 	return &runner{
 		Path: path,
@@ -95,17 +98,14 @@ type runner struct {
 	cmdFunc func(ident, inputDirPath string) *exec.Cmd // returns a Cmd that runs ansible-runner
 }
 
-// Run uses the runner with the given input and returns a status.
-func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubeconfig string) (chan eventapi.JobEvent, error) {
-	parameters["meta"] = map[string]string{"namespace": namespace, "name": name}
+func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan eventapi.JobEvent, error) {
 	ident := strconv.Itoa(rand.Int())
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "runner",
 		"job":       ident,
-		"name":      name,
-		"namespace": namespace,
+		"name":      u.GetName(),
+		"namespace": u.GetNamespace(),
 	})
-
 	// start the event receiver. We'll check errChan for an error after
 	// ansible-runner exits.
 	errChan := make(chan error, 1)
@@ -113,11 +113,10 @@ func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubecon
 	if err != nil {
 		return nil, err
 	}
-
 	inputDir := inputdir.InputDir{
-		Path:         filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, namespace, name),
+		Path:         filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, u.GetNamespace(), u.GetName()),
 		PlaybookPath: r.Path,
-		Parameters:   paramconv.MapToSnake(parameters),
+		Parameters:   r.makeParameters(u),
 		EnvVars: map[string]string{
 			"K8S_AUTH_KUBECONFIG": kubeconfig,
 		},
@@ -147,6 +146,20 @@ func (r *runner) Run(parameters map[string]interface{}, name, namespace, kubecon
 			logger.Errorf("error from event api: %s", err.Error())
 		}
 	}()
-
 	return receiver.Events, nil
+
+}
+
+func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interface{} {
+	s := u.Object["spec"]
+	spec, ok := s.(map[string]interface{})
+	if !ok {
+		logrus.Warnf("spec was not found for CR:%v - %v in %v", u.GroupVersionKind(), u.GetNamespace(), u.GetName())
+		spec = map[string]interface{}{}
+	}
+	parameters := paramconv.MapToSnake(spec)
+	parameters["meta"] = map[string]string{"namespace": u.GetNamespace(), "name": u.GetName()}
+	objectKey := fmt.Sprintf("_%v_%v", strings.Replace(r.GVK.Group, ".", "_", -1), strings.ToLower(r.GVK.Kind))
+	parameters[objectKey] = u.Object
+	return parameters
 }

@@ -101,6 +101,36 @@ You should then see the operator creating resources in response to the CR's crea
 
 ## More Detailed Explanation
 
+#### Extra vars sent to Ansible
+The extravars that are sent to ansible are predefined and managed by the operator.
+
+For the CR example:
+```yaml
+apiVersion: "app.example.com/v1alpha1"
+kind: "Database"
+metadata:
+  name: "example"
+spec:
+  message:"Hello world 2"
+  newParameter: "newParam"
+```
+
+The structure is:
+
+
+```json
+{ "meta": {
+        "name": "<cr-name>",
+        "namespace": "<cr-namespace>",
+  },
+  "message": "Hello world 2",
+  "new_parameter": "newParam",
+  "_app_example_com_database": {
+     <Full CRD>
+   },
+}
+```
+
 #### Ansible Operator Base Image
 
 It is an CentOS based ansible-runner image, with the operator installed.  
