@@ -10,7 +10,7 @@ RUN echo "localhost ansible_connection=local" > /etc/ansible/hosts \
 
 ENV OPERATOR=/usr/local/bin/ansible-operator \
     USER_UID=1001 \
-    USER_NAME=runner \
+    USER_NAME=ansible-operator\
     HOME=/opt/ansible
 
 # install operator binary

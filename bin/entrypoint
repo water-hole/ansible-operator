@@ -1,8 +1,7 @@
 #!/bin/bash -e
 
-# Patch /etc/passwd file with the current user info.
-# The current user's entry must be correctly defined in this file in order for
-# the `ssh` command to work within the created container.
+# This is documented here:
+# https://docs.openshift.com/container-platform/3.10/creating_images/guidelines.html#openshift-specific-guidelines
 
 if ! whoami &>/dev/null; then
   if [ -w /etc/passwd ]; then
