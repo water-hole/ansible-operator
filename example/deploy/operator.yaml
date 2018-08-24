@@ -15,8 +15,6 @@ spec:
       containers:
         - name: ansible-operator
           image: quay.io/water-hole/busybox-ansible-operator
-          command:
-          - ansible-operator
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
