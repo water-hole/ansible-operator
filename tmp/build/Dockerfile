@@ -8,5 +8,17 @@ RUN echo "localhost ansible_connection=local" > /etc/ansible/hosts \
     && echo 'roles_path = /opt/ansible/roles' >> /etc/ansible/ansible.cfg \
     && echo 'library = /usr/share/ansible/openshift' >> /etc/ansible/ansible.cfg
 
+ENV OPERATOR=/usr/local/bin/ansible-operator \
+    USER_UID=1001 \
+    USER_NAME=runner \
+    HOME=/opt/ansible
+
 # install operator binary
-ADD tmp/_output/bin/ansible-operator /usr/local/bin/ansible-operator
+ADD tmp/_output/bin/ansible-operator ${OPERATOR}
+
+COPY bin /usr/local/bin
+RUN  /usr/local/bin/user_setup
+
+ENTRYPOINT ["/usr/local/bin/entrypoint"]
+
+USER ${USER_UID}
