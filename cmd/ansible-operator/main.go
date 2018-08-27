@@ -76,22 +76,22 @@ func runSDK(done chan error) {
 		return
 	}
 	resyncPeriod := 60
-	configs, err := runner.NewFromConfig("/opt/ansible/config.yaml")
+	watches, err := runner.NewFromWatches("/opt/ansible/watches.yaml")
 	if err != nil {
-		logrus.Error("Failed to get configs")
+		logrus.Error("Failed to get watches")
 		done <- err
 		return
 	}
 	rand.Seed(time.Now().Unix())
 
-	for gvk := range configs {
+	for gvk := range watches {
 		logrus.Infof("Watching %s/%v, %s, %s, %d", gvk.Group, gvk.Version, gvk.Kind, namespace, resyncPeriod)
 		registerGVK(gvk)
 		sdk.Watch(fmt.Sprintf("%v/%v", gvk.Group, gvk.Version), gvk.Kind, namespace, resyncPeriod)
 
 	}
 	h, err := handler.New(handler.Options{
-		GVKToRunner: configs,
+		GVKToRunner: watches,
 	})
 	if err != nil {
 		logrus.Errorf("unable to create ansible handler - %v", err)

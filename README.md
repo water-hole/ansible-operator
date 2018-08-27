@@ -77,7 +77,7 @@ the cluster.
 
 ```
 mkdir -p /opt/anisble/roles
-cp example/config.yaml /opt/ansible/
+cp example/watches.yaml /opt/ansible/
 cp example/playbook.yaml /opt/anisble/
 cp -a example/busybox /opt/ansible/roles/
 ```
@@ -138,14 +138,16 @@ It is an CentOS based ansible-runner image, with the operator installed.
 
 This image should be used as a base image. An example of this can be found [here](example/Dockerfile)
 
-The Operator expects a config file to be copied into the container at a predefined location: /opt/ansible/config.yaml
+The Operator expects a mapping file, which lists each GVK to watch and the
+corresponding path to an ansible role or playbook, to be copied into the
+container at a predefined location: /opt/ansible/watches.yaml
 
 Example:
 ```Dockerfile
-COPY config.yaml /opt/ansible/config.yaml
+COPY watches.yaml /opt/ansible/watches.yaml
 ```
 
-The Config file format is yaml and is an array of objects. The object has mandatory fields:
+The Watches file format is yaml and is an array of objects. The object has mandatory fields:
 	version: The version of the Custom Resource that you will be watching.
 	group: The group of the Custom Resource that you will be watching.
 	kind: The kind of the Custom Resource that you will be watching.
