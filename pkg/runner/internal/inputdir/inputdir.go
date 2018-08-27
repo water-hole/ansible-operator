@@ -14,7 +14,6 @@ import (
 type InputDir struct {
 	Path         string
 	PlaybookPath string
-	RolePath     string
 	Parameters   map[string]interface{}
 	EnvVars      map[string]string
 	Settings     map[string]string
