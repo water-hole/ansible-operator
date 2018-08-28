@@ -1,22 +1,31 @@
 package main
 
 import (
-	"context"
+	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"runtime"
+	"strings"
 	"time"
 
-	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
-	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	handler "github.com/water-hole/ansible-operator/pkg/handler"
 	proxy "github.com/water-hole/ansible-operator/pkg/proxy"
 	"github.com/water-hole/ansible-operator/pkg/runner"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	crthandler "sigs.k8s.io/controller-runtime/pkg/handler"
 
 	"github.com/sirupsen/logrus"
 )
@@ -28,6 +37,14 @@ func printVersion() {
 }
 
 func main() {
+	flag.Parse()
+	logf.SetLogger(logf.ZapLogger(false))
+
+	mrg, err := manager.New(config.GetConfigOrDie(), manager.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	printVersion()
 	done := make(chan error)
 
@@ -38,10 +55,10 @@ func main() {
 	})
 
 	// start the operator
-	go runSDK(done)
+	go runSDK(done, mrg)
 
 	// wait for either to finish
-	err := <-done
+	err = <-done
 	if err == nil {
 		logrus.Info("Exiting")
 	} else {
@@ -49,12 +66,8 @@ func main() {
 	}
 }
 
-func registerGVK(gvk schema.GroupVersionKind) {
-	schemeBuilder := k8sruntime.NewSchemeBuilder(func(s *k8sruntime.Scheme) error {
-		s.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
-		return nil
-	})
-	k8sutil.AddToSDKScheme(schemeBuilder.AddToScheme)
+func registerGVK(gvk schema.GroupVersionKind, mrg manager.Manager) {
+	mrg.GetScheme().AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
 }
 
 // Used to set the decoder to just deserialize instead of decode.
@@ -66,16 +79,17 @@ func decoder(gv schema.GroupVersion, codecs serializer.CodecFactory) k8sruntime.
 	return codecs.UniversalDeserializer()
 }
 
-func runSDK(done chan error) {
+func runSDK(done chan error, mrg manager.Manager) {
 	// setting the utility decoder function.
-	k8sutil.SetDecoderFunc(decoder)
-	namespace, err := k8sutil.GetWatchNamespace()
-	if err != nil {
-		logrus.Error("Failed to get watch namespace")
-		done <- err
-		return
-	}
-	resyncPeriod := 60
+	//k8sutil.SetDecoderFunc(decoder)
+	//namespace, err := k8sutil.GetWatchNamespace()
+	//if err != nil {
+	//	logrus.Error("Failed to get watch namespace")
+	//	done <- err
+	//	return
+	//}
+	//resyncPeriod := 60
+	namespace := "default"
 	watches, err := runner.NewFromWatches("/opt/ansible/watches.yaml")
 	if err != nil {
 		logrus.Error("Failed to get watches")
@@ -84,21 +98,33 @@ func runSDK(done chan error) {
 	}
 	rand.Seed(time.Now().Unix())
 
-	for gvk := range watches {
-		logrus.Infof("Watching %s/%v, %s, %s, %d", gvk.Group, gvk.Version, gvk.Kind, namespace, resyncPeriod)
-		registerGVK(gvk)
-		sdk.Watch(fmt.Sprintf("%v/%v", gvk.Group, gvk.Version), gvk.Kind, namespace, resyncPeriod)
-
+	for gvk, runner := range watches {
+		logrus.Infof("Watching %s/%v, %s, %s", gvk.Group, gvk.Version, gvk.Kind, namespace)
+		//registerGVK(gvk)
+		//sdk.Watch(fmt.Sprintf("%v/%v", gvk.Group, gvk.Version), gvk.Kind, namespace, resyncPeriod)
+		h := &handler.ReconcileAnsibleOperator{
+			Client: mrg.GetClient(),
+			GVK:    gvk,
+			Runner: runner,
+		}
+		mrg.GetScheme().AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		metav1.AddToGroupVersion(mrg.GetScheme(), schema.GroupVersion{
+			Group:   gvk.Group,
+			Version: gvk.Version,
+		})
+		//Create new controllers for each gvk.
+		c, err := controller.New(fmt.Sprintf("%v-controller", strings.ToLower(gvk.Kind)), mrg, controller.Options{
+			Reconciler: h,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		if err := c.Watch(&source.Kind{Type: u}, &crthandler.EnqueueRequestForObject{}); err != nil {
+			log.Fatal(err)
+		}
 	}
-	h, err := handler.New(handler.Options{
-		GVKToRunner: watches,
-	})
-	if err != nil {
-		logrus.Errorf("unable to create ansible handler - %v", err)
-		done <- err
-		return
-	}
-	sdk.Handle(h)
-	sdk.Run(context.TODO())
+	log.Fatal(mrg.Start(signals.SetupSignalHandler()))
 	done <- nil
 }
