@@ -2,6 +2,10 @@
   gather_facts: no
   tasks:
   - debug:
-      msg: "{{ _app_example_com_database }}"
+      var: _app_example_com_database
   - import_role:
       name: "busybox"
+    when: sentinel is not defined
+  - debug:
+      msg: "sentinel value '{{ sentinel }}' detected, this is a finalizer"
+    when: sentinel is defined
