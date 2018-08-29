@@ -36,8 +36,8 @@ type watch struct {
 	Path    string `yaml:"path"`
 }
 
-// NewFromConfig reads the operator's config file at the provided path.
-func NewFromConfig(path string) (map[schema.GroupVersionKind]Runner, error) {
+// NewFromWatches reads the operator's config file at the provided path.
+func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		logrus.Errorf("failed to get config file %v", err)
