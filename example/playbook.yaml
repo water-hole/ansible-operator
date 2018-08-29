@@ -1,6 +1,5 @@
 - hosts: localhost
-  roles:
-  - busybox
+  gather_facts: no
   tasks:
   - debug:
       msg: "{{ _app_example_com_database }}"

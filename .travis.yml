@@ -48,7 +48,7 @@ jobs:
         - kubectl logs $pod
 
         # set a test string, build example operator from previously built base image
-        - sed -i s/hello\ world/travis\ test/g busybox/defaults/main.yml
+        - sed -i s/hello\ world/travis\ test/g roles/busybox/defaults/main.yml
         - docker build -t busybox-ansible-operator-test:test .
         - kubectl patch deployment ansible-operator -p '{"spec":{"template":{"spec":{"containers":[{"name":"ansible-operator","imagePullPolicy":"Never"}]}}}}'
         - kubectl set image deployment/ansible-operator *=busybox-ansible-operator-test:test
