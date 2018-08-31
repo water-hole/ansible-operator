@@ -82,8 +82,6 @@ func NewForPlaybook(path string, gvk schema.GroupVersionKind) Runner {
 		GVK:  gvk,
 		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
 			dc := exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
-			dc.Stdout = os.Stdout
-			dc.Stderr = os.Stderr
 			return dc
 		},
 	}
@@ -98,8 +96,6 @@ func NewForRole(path string, gvk schema.GroupVersionKind) Runner {
 		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
 			rolePath, roleName := filepath.Split(path)
 			dc := exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
-			dc.Stdout = os.Stdout
-			dc.Stderr = os.Stderr
 			return dc
 		},
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
+	"github.com/water-hole/ansible-operator/pkg/handler/events"
 	"github.com/water-hole/ansible-operator/pkg/proxy/kubeconfig"
 	"github.com/water-hole/ansible-operator/pkg/runner"
 	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
@@ -68,7 +69,9 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 
 	// iterate events from ansible, looking for the final one
 	statusEvent := eventapi.StatusJobEvent{}
+	eHandler := events.NewLoggingEventHandler(events.Tasks)
 	for event := range eventChan {
+		eHandler.Handle(u, event)
 		if event.Event == "playbook_on_stats" {
 			// convert to StatusJobEvent; would love a better way to do this
 			data, err := json.Marshal(event)
