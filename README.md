@@ -148,18 +148,40 @@ COPY watches.yaml /opt/ansible/watches.yaml
 ```
 
 The Watches file format is yaml and is an array of objects. The object has mandatory fields:
-	version: The version of the Custom Resource that you will be watching.
-	group: The group of the Custom Resource that you will be watching.
-	kind: The kind of the Custom Resource that you will be watching.
-	path:  This is the path to the playbook that you have added to the container. This playbook is expected to be simply a way to call roles.
-  name: is an identifier for this combination of gvk(group, version, kind) and the path to the playbook.
+
+**version**:  The version of the Custom Resource that you will be watching.
+
+**group**:  The group of the Custom Resource that you will be watching.
+
+**kind**:  The kind of the Custom Resource that you will be watching.
+
+**playbook**:  This is the path to the playbook that you have added to the
+container. This playbook is expected to be simply a way to call roles. This
+field is mutually exclusive with the "role" field.
+
+**role**:  This is the path to the role that you have added to the container.
+For example if your roles directory is at `/opt/ansible/roles/` and your role
+is named `busybox`, this value will be `/opt/ansible/roles/busybox`. This field
+is mutually exclusive with the "playbook" field.
+
+Example specifying a playbook:
+
 ```yaml
 ---
-- name: Database
-  version: v1alpha1
+- version: v1alpha1
   group: app.example.com
   kind: Database
-  path: /opt/ansible/roles/busybox/playbook.yaml
+  playbook: /opt/ansible/playbook.yaml
+```
+
+Example specifying a role:
+
+```yaml
+---
+- version: v1alpha1
+  group: app.example.com
+  kind: Database
+  role: /opt/ansible/roles/busybox/
 ```
 
 The operator expects that the ansible

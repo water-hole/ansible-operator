@@ -29,11 +29,11 @@ type Runner interface {
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
 // The mapping is used to compose an ansible operator.
 type watch struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-	Group   string `yaml:"group"`
-	Kind    string `yaml:"kind"`
-	Path    string `yaml:"path"`
+	Version  string `yaml:"version"`
+	Group    string `yaml:"group"`
+	Kind     string `yaml:"kind"`
+	Playbook string `yaml:"playbook"`
+	Role     string `yaml:"role"`
 }
 
 // NewFromWatches reads the operator's config file at the provided path.
@@ -57,7 +57,20 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 			Version: w.Version,
 			Kind:    w.Kind,
 		}
-		m[s] = NewForPlaybook(w.Path, s)
+		switch {
+		case w.Playbook != "":
+			if !filepath.IsAbs(w.Playbook) {
+				return nil, fmt.Errorf("Path must be absolute for %v", s)
+			}
+			m[s] = NewForPlaybook(w.Playbook, s)
+		case w.Role != "":
+			if !filepath.IsAbs(w.Role) {
+				return nil, fmt.Errorf("Path must be absolute for %v", s)
+			}
+			m[s] = NewForRole(w.Role, s)
+		default:
+			return nil, fmt.Errorf("Either playbook or role must be defined for %v", s)
+		}
 	}
 	return m, nil
 }
@@ -78,12 +91,13 @@ func NewForPlaybook(path string, gvk schema.GroupVersionKind) Runner {
 
 // NewForRole returns a new Runner based on the path to an ansible role.
 func NewForRole(path string, gvk schema.GroupVersionKind) Runner {
+	path = strings.TrimRight(path, "/")
 	return &runner{
 		Path: path,
 		GVK:  gvk,
 		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
-			// FIXME the below command does not fully work
-			dc := exec.Command("ansible-runner", "-vv", "--role", "busybox", "--roles-path", "/opt/ansible/roles/", "--hosts", "localhost", "-i", ident, "run", inputDirPath)
+			rolePath, roleName := filepath.Split(path)
+			dc := exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
 			dc.Stdout = os.Stdout
 			dc.Stderr = os.Stderr
 			return dc
@@ -114,9 +128,8 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 		return nil, err
 	}
 	inputDir := inputdir.InputDir{
-		Path:         filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, u.GetNamespace(), u.GetName()),
-		PlaybookPath: r.Path,
-		Parameters:   r.makeParameters(u),
+		Path:       filepath.Join("/tmp/ansible-operator/runner/", r.GVK.Group, r.GVK.Version, r.GVK.Kind, u.GetNamespace(), u.GetName()),
+		Parameters: r.makeParameters(u),
 		EnvVars: map[string]string{
 			"K8S_AUTH_KUBECONFIG": kubeconfig,
 		},
@@ -124,6 +137,15 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 			"runner_http_url":  receiver.SocketPath,
 			"runner_http_path": receiver.URLPath,
 		},
+	}
+	// If Path is a dir, assume it is a role path. Otherwise assume it's a
+	// playbook path
+	fi, err := os.Lstat(r.Path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		inputDir.PlaybookPath = r.Path
 	}
 	err = inputDir.Write()
 	if err != nil {
