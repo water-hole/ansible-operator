@@ -37,10 +37,10 @@ func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.Job
 	})
 	switch l.LogLevel {
 	case Everything:
-		log.Infof("event: %#v", u)
+		log.Infof("event: %#v", e.EventData)
 	case Tasks:
 		if t, ok := e.EventData["task"]; ok {
-			log.WithField("task", t).Infof("%v", u)
+			log.WithField("task", t).Infof("%v", e.EventData)
 		}
 	}
 }
