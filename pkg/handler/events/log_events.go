@@ -6,23 +6,28 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+// LogLevel - Levelt for the logging to take place.
 type LogLevel int
 
 const (
+	// Everything - log every event.
 	Everything LogLevel = iota
+	// Tasks - only log the high level tasks.
 	Tasks
+	// Nothing -  this will log nothing.
 	Nothing
 )
 
+// EventHandler - knows how to handle job events.
 type EventHandler interface {
-	Handle(*unstructured.Unstructured, eventapi.JobEvent) error
+	Handle(*unstructured.Unstructured, eventapi.JobEvent)
 }
 
 type loggingEventHandler struct {
 	LogLevel LogLevel
 }
 
-func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.JobEvent) error {
+func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.JobEvent) {
 	log := logrus.WithFields(logrus.Fields{
 		"component":  "logging_event_handler",
 		"name":       u.GetName(),
@@ -32,15 +37,15 @@ func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.Job
 	})
 	switch l.LogLevel {
 	case Everything:
-		log.Infof("event: %#v")
+		log.Infof("event: %#v", u)
 	case Tasks:
 		if t, ok := e.EventData["task"]; ok {
-			log.Infof("task: %v", t)
+			log.WithField("task", t).Infof("%v", u)
 		}
 	}
-	return nil
 }
 
+// NewLoggingEventHandler - Creates a Logging Event Handler to log events.
 func NewLoggingEventHandler(l LogLevel) EventHandler {
 	return loggingEventHandler{
 		LogLevel: l,

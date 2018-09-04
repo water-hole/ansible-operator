@@ -24,18 +24,18 @@ import (
 // options Handle with your implementation of this interface, and it will be
 // used.
 type EventHandler interface {
-	Handle(context.Context, sdk.Event, runner.Runner) error
+	Handle(context.Context, sdk.Event, runner.Runner, []events.EventHandler) error
 }
 
 // EventHandlerFunc is a adapter to use functions as handlers.
-type EventHandlerFunc func(context.Context, sdk.Event, runner.Runner) error
+type EventHandlerFunc func(context.Context, sdk.Event, runner.Runner, []events.EventHandler) error
 
 // Handle calls f(ctx, event, run)
-func (f EventHandlerFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner) error {
-	return f(ctx, event, run)
+func (f EventHandlerFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner, eventHandlers []events.EventHandler) error {
+	return f(ctx, event, run, eventHandlers)
 }
 
-func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) error {
+func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, eventHandlers []events.EventHandler) error {
 	u, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
@@ -69,9 +69,10 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 
 	// iterate events from ansible, looking for the final one
 	statusEvent := eventapi.StatusJobEvent{}
-	eHandler := events.NewLoggingEventHandler(events.Tasks)
 	for event := range eventChan {
-		eHandler.Handle(u, event)
+		for _, eHandler := range eventHandlers {
+			go eHandler.Handle(u, event)
+		}
 		if event.Event == "playbook_on_stats" {
 			// convert to StatusJobEvent; would love a better way to do this
 			data, err := json.Marshal(event)
@@ -129,12 +130,19 @@ func New(options Options) (sdk.Handler, error) {
 	if options.Handle != nil {
 		handle = options.Handle
 	}
-	return &handler{crdToPlaybook: options.GVKToRunner, handle: handle}, nil
+	return &handler{
+		crdToPlaybook: options.GVKToRunner,
+		handle:        handle,
+		eventHandlers: []events.EventHandler{
+			events.NewLoggingEventHandler(events.Tasks),
+		},
+	}, nil
 }
 
 type handler struct {
 	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
 	handle        EventHandler
+	eventHandlers []events.EventHandler
 }
 
 // Handle conform to the sdk.Handle interface.
@@ -144,5 +152,5 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("unable to find playbook mapping for gvk: %v", event.Object.GetObjectKind().GroupVersionKind())
 		return nil
 	}
-	return h.handle.Handle(ctx, event, p)
+	return h.handle.Handle(ctx, event, p, h.eventHandlers)
 }
