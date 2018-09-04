@@ -114,8 +114,10 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, even
 // The GVKToRunner map must be passed in and must have at least a single
 // mapping.
 type Options struct {
-	Handle      EventHandler
-	GVKToRunner map[schema.GroupVersionKind]runner.Runner
+	Handle        EventHandler
+	GVKToRunner   map[schema.GroupVersionKind]runner.Runner
+	EventHandlers []events.EventHandler
+	LoggingLevel  events.LogLevel
 }
 
 // New will create a ansible handler to be used by the sdk. New will create a
@@ -130,12 +132,15 @@ func New(options Options) (sdk.Handler, error) {
 	if options.Handle != nil {
 		handle = options.Handle
 	}
+	if options.EventHandlers == nil {
+		options.EventHandlers = []events.EventHandler{}
+
+	}
+	eventHandlers := append(options.EventHandlers, events.NewLoggingEventHandler(options.LoggingLevel))
 	return &handler{
 		crdToPlaybook: options.GVKToRunner,
 		handle:        handle,
-		eventHandlers: []events.EventHandler{
-			events.NewLoggingEventHandler(events.Tasks),
-		},
+		eventHandlers: eventHandlers,
 	}, nil
 }
 

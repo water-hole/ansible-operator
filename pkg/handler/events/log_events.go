@@ -10,10 +10,12 @@ import (
 type LogLevel int
 
 const (
-	// Everything - log every event.
-	Everything LogLevel = iota
 	// Tasks - only log the high level tasks.
-	Tasks
+	Tasks LogLevel = iota
+
+	// Everything - log every event.
+	Everything
+
 	// Nothing -  this will log nothing.
 	Nothing
 )
@@ -35,12 +37,16 @@ func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.Job
 		"gvk":        u.GroupVersionKind().String(),
 		"event_type": e.Event,
 	})
+	t, ok := e.EventData["task"]
+	if ok {
+		log = log.WithField("task", t)
+	}
 	switch l.LogLevel {
 	case Everything:
 		log.Infof("event: %#v", e.EventData)
 	case Tasks:
-		if t, ok := e.EventData["task"]; ok {
-			log.WithField("task", t).Infof("%v", e.EventData)
+		if ok {
+			log.Infof("event: %#v", e.EventData)
 		}
 	}
 }
