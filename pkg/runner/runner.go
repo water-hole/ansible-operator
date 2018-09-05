@@ -57,6 +57,10 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 			Version: w.Version,
 			Kind:    w.Kind,
 		}
+		// Check if schema is a duplicate
+		if _, ok := m[s]; ok {
+			return nil, fmt.Errorf("duplicate GVK: %v", s.String())
+		}
 		switch {
 		case w.Playbook != "":
 			if !filepath.IsAbs(w.Playbook) {
