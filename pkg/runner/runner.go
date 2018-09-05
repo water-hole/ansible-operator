@@ -24,6 +24,7 @@ import (
 // and run the correct code.
 type Runner interface {
 	Run(*unstructured.Unstructured, string) (chan eventapi.JobEvent, error)
+	GetFinalizer() (string, bool)
 }
 
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
@@ -102,7 +103,7 @@ func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finaliz
 			return exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
 		},
 	}
-	err := addFinalizer(finalizer, r)
+	err := r.addFinalizer(finalizer)
 	if err != nil {
 		return nil, err
 	}
@@ -123,38 +124,11 @@ func NewForRole(path string, gvk schema.GroupVersionKind, finalizer *Finalizer) 
 			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
 		},
 	}
-	err := addFinalizer(finalizer, r)
+	err := r.addFinalizer(finalizer)
 	if err != nil {
 		return nil, err
 	}
 	return r, nil
-}
-
-func addFinalizer(finalizer *Finalizer, r *runner) error {
-	r.Finalizer = finalizer
-	switch {
-	case finalizer == nil:
-		return nil
-	case finalizer.Playbook != "":
-		if !filepath.IsAbs(finalizer.Playbook) {
-			return fmt.Errorf("finalizer playbook path must be absolute for %v", r.GVK)
-		}
-		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
-			return exec.Command("ansible-runner", "-vv", "-p", finalizer.Playbook, "-i", ident, "run", inputDirPath)
-		}
-	case finalizer.Role != "":
-		if !filepath.IsAbs(finalizer.Role) {
-			return fmt.Errorf("finalizer role path must be absolute for %v", r.GVK)
-		}
-		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
-			path := strings.TrimRight(finalizer.Role, "/")
-			rolePath, roleName := filepath.Split(path)
-			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
-		}
-	case len(finalizer.Vars) != 0:
-		r.finalizerCmdFunc = r.cmdFunc
-	}
-	return nil
 }
 
 // runner - implements the Runner interface for a GVK that's being watched.
@@ -207,7 +181,21 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 	}
 
 	go func() {
-		dc := r.cmdFunc(ident, inputDir.Path)
+		var dc *exec.Cmd
+		deleted := u.GetDeletionTimestamp() != nil
+		if deleted {
+			if r.isFinalizerRun(u) {
+				logger.Debugf("Resource is marked for deletion, running finalizer %s", r.Finalizer.Name)
+				dc = r.finalizerCmdFunc(ident, inputDir.Path)
+			} else {
+				logger.Debug("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
+				receiver.Close()
+				return
+			}
+		} else {
+			dc = r.cmdFunc(ident, inputDir.Path)
+		}
+
 		err := dc.Run()
 		if err != nil {
 			logger.Errorf("error from ansible-runner: %s", err.Error())
@@ -225,6 +213,52 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 	return receiver.Events, nil
 }
 
+func (r *runner) GetFinalizer() (string, bool) {
+	if r.Finalizer != nil {
+		return r.Finalizer.Name, true
+	}
+	return "", false
+}
+
+func (r *runner) isFinalizerRun(u *unstructured.Unstructured) bool {
+	finalizersSet := r.Finalizer != nil && u.GetFinalizers() != nil
+	// If finalizers are set and we find our finalizer in them, we need to run the finalizer
+	if finalizersSet && u.GetDeletionTimestamp() != nil {
+		for _, f := range u.GetFinalizers() {
+			if f == r.Finalizer.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *runner) addFinalizer(finalizer *Finalizer) error {
+	r.Finalizer = finalizer
+	switch {
+	case finalizer == nil:
+		return nil
+	case finalizer.Playbook != "":
+		if !filepath.IsAbs(finalizer.Playbook) {
+			return fmt.Errorf("finalizer playbook path must be absolute for %v", r.GVK)
+		}
+		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
+			return exec.Command("ansible-runner", "-vv", "-p", finalizer.Playbook, "-i", ident, "run", inputDirPath)
+		}
+	case finalizer.Role != "":
+		if !filepath.IsAbs(finalizer.Role) {
+			return fmt.Errorf("finalizer role path must be absolute for %v", r.GVK)
+		}
+		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
+			path := strings.TrimRight(finalizer.Role, "/")
+			rolePath, roleName := filepath.Split(path)
+			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
+		}
+	case len(finalizer.Vars) != 0:
+		r.finalizerCmdFunc = r.cmdFunc
+	}
+	return nil
+}
 func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interface{} {
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
@@ -236,5 +270,10 @@ func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interfa
 	parameters["meta"] = map[string]string{"namespace": u.GetNamespace(), "name": u.GetName()}
 	objectKey := fmt.Sprintf("_%v_%v", strings.Replace(r.GVK.Group, ".", "_", -1), strings.ToLower(r.GVK.Kind))
 	parameters[objectKey] = u.Object
+	if r.isFinalizerRun(u) {
+		for k, v := range r.Finalizer.Vars {
+			parameters[k] = v
+		}
+	}
 	return parameters
 }
