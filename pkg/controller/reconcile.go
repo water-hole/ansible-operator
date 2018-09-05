@@ -1,4 +1,4 @@
-package handler
+package controller
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
+	"github.com/water-hole/ansible-operator/pkg/events"
 	"github.com/water-hole/ansible-operator/pkg/proxy/kubeconfig"
 	"github.com/water-hole/ansible-operator/pkg/runner"
 	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
@@ -20,9 +20,10 @@ import (
 
 // ReconcileAnsibleOperator - object to reconcile runner requests
 type ReconcileAnsibleOperator struct {
-	GVK    schema.GroupVersionKind
-	Runner runner.Runner
-	Client client.Client
+	GVK           schema.GroupVersionKind
+	Runner        runner.Runner
+	Client        client.Client
+	EventHandlers []events.EventHandler
 }
 
 // Reconcile - handle the event.
@@ -58,6 +59,9 @@ func (r *ReconcileAnsibleOperator) Reconcile(request reconcile.Request) (reconci
 	// iterate events from ansible, looking for the final one
 	statusEvent := eventapi.StatusJobEvent{}
 	for event := range eventChan {
+		for _, eHandler := range r.EventHandlers {
+			go eHandler.Handle(u, event)
+		}
 		if event.Event == "playbook_on_stats" {
 			// convert to StatusJobEvent; would love a better way to do this
 			data, err := json.Marshal(event)
@@ -81,16 +85,15 @@ func (r *ReconcileAnsibleOperator) Reconcile(request reconcile.Request) (reconci
 		u.Object["status"] = ResourceStatus{
 			Status: NewStatusFromStatusJobEvent(statusEvent),
 		}
-		sdk.Update(u)
+		r.Client.Update(context.TODO(), u)
 		logrus.Infof("adding status for the first time")
 		return reconcile.Result{}, nil
 	}
 	// Need to conver the map[string]interface into a resource status.
 	if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
 		u.Object["status"] = status
-		sdk.Update(u)
+		r.Client.Update(context.TODO(), u)
 		return reconcile.Result{}, nil
 	}
 	return reconcile.Result{}, nil
-
 }

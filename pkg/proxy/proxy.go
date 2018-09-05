@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 
-	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/rest"
 )
 
 // InjectOwnerReferenceHandler will handle proxied requests and inject the
@@ -92,14 +92,13 @@ type Options struct {
 	Port             int
 	Handler          HandlerChain
 	NoOwnerInjection bool
+	KubeConfig       *rest.Config
 }
 
 // RunProxy will start a proxy server in a go routine and return on the error
 // channel if something is not correct on startup.
 func RunProxy(done chan error, o Options) {
-	clientConfig := k8sclient.GetKubeConfig()
-
-	server, err := newServer("/", clientConfig)
+	server, err := newServer("/", o.KubeConfig)
 	if err != nil {
 		done <- err
 		return

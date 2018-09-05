@@ -222,7 +222,6 @@ func (ip *specificInformersMap) newListWatch(gvk schema.GroupVersionKind) (*cach
 		return nil, err
 	}
 
-	fmt.Printf("%#v", listObj)
 	// Create a new ListWatch for the obj
 	return &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
