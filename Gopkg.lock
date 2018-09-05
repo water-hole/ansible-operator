@@ -120,11 +120,10 @@
   revision = "cca7078d478f8520f85629ad7c68962d31ed7682"
 
 [[projects]]
-  branch = "refactor/controller-runtime"
+  branch = "master"
   name = "github.com/operator-framework/operator-sdk"
   packages = ["version"]
-  revision = "ba90c2f6b10b9eef3fe6d4a45b8c7a487e449082"
-  source = "github.com/shawn-hurley/operator-sdk"
+  revision = "ac46cd787d8c3a172a0e196cab04b3497eaed663"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
@@ -416,6 +415,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c6eeec498b54eabc3d4bc54c2da34489d3a1e1345bf863cc058ebc7abe0d6eb5"
+  inputs-digest = "d69f97aef09cd72901e78e775a60d2b3cc8ea96333ebb76e02cb321b132b9433"
   solver-name = "gps-cdcl"
   solver-version = 1

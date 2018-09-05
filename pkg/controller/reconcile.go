@@ -30,7 +30,27 @@ type ReconcileAnsibleOperator struct {
 func (r *ReconcileAnsibleOperator) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(r.GVK)
-	r.Client.Get(context.TODO(), request.NamespacedName, u)
+	err := r.Client.Get(context.TODO(), request.NamespacedName, u)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	deleted := u.GetDeletionTimestamp() != nil
+	finalizer, finalizerExists := r.Runner.GetFinalizer()
+	pendingFinalizers := u.GetFinalizers()
+	// If the resource is being deleted we don't want to add the finalizer again
+	if finalizerExists && !deleted && !contains(pendingFinalizers, finalizer) {
+		logrus.Debugf("Adding finalizer %s to resource", finalizer)
+		finalizers := append(pendingFinalizers, finalizer)
+		u.SetFinalizers(finalizers)
+		err := r.Client.Update(context.TODO(), u)
+		return reconcile.Result{}, err
+	}
+	if !contains(pendingFinalizers, finalizer) && deleted {
+		logrus.Info("Resource is terminated, skipping reconcilation")
+		return reconcile.Result{}, nil
+	}
+
 	s := u.Object["spec"]
 	_, ok := s.(map[string]interface{})
 	if !ok {
@@ -80,20 +100,53 @@ func (r *ReconcileAnsibleOperator) Reconcile(request reconcile.Request) (reconci
 		return reconcile.Result{}, err
 	}
 
+	// We only want to update the CustomResource once, so we'll track changes and do it at the end
+	var needsUpdate bool
+	runSuccessful := true
+	for _, count := range statusEvent.EventData.Failures {
+		if count > 0 {
+			runSuccessful = false
+			break
+		}
+	}
+	// The finalizer has run successfully, time to remove it
+	if deleted && finalizerExists && runSuccessful {
+		finalizers := []string{}
+		for _, pendingFinalizer := range pendingFinalizers {
+			if pendingFinalizer != finalizer {
+				finalizers = append(finalizers, pendingFinalizer)
+			}
+		}
+		u.SetFinalizers(finalizers)
+		needsUpdate = true
+	}
+
 	statusMap, ok := u.Object["status"].(map[string]interface{})
 	if !ok {
 		u.Object["status"] = ResourceStatus{
 			Status: NewStatusFromStatusJobEvent(statusEvent),
 		}
-		r.Client.Update(context.TODO(), u)
 		logrus.Infof("adding status for the first time")
-		return reconcile.Result{}, nil
+		needsUpdate = true
+	} else {
+		// Need to conver the map[string]interface into a resource status.
+		if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
+			u.Object["status"] = status
+			needsUpdate = true
+		}
 	}
-	// Need to conver the map[string]interface into a resource status.
-	if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
-		u.Object["status"] = status
-		r.Client.Update(context.TODO(), u)
-		return reconcile.Result{}, nil
+	if needsUpdate {
+		err := r.Client.Update(context.TODO(), u)
+		return reconcile.Result{}, err
 	}
 	return reconcile.Result{}, nil
+}
+
+func contains(l []string, s string) bool {
+	for _, elem := range l {
+		if elem == s {
+			return true
+		}
+	}
+	return false
 }
