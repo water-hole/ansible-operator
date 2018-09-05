@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// ReconcileAnsibleOperator - object to reconcile runner requests
-type ReconcileAnsibleOperator struct {
+// AnsibleOperatorReconciler - object to reconcile runner requests
+type AnsibleOperatorReconciler struct {
 	GVK           schema.GroupVersionKind
 	Runner        runner.Runner
 	Client        client.Client
@@ -27,7 +27,7 @@ type ReconcileAnsibleOperator struct {
 }
 
 // Reconcile - handle the event.
-func (r *ReconcileAnsibleOperator) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(r.GVK)
 	err := r.Client.Get(context.TODO(), request.NamespacedName, u)

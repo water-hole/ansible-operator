@@ -26,30 +26,30 @@ type Options struct {
 	GVK           schema.GroupVersionKind
 }
 
-// NewController - Creates a new ansible operator controller and adds it to the manager
-func NewController(mrg manager.Manager, options Options) {
+// New - Creates a new ansible operator controller and adds it to the manager
+func New(mgr manager.Manager, options Options) {
 	logrus.Infof("Watching %s/%v, %s, %s", options.GVK.Group, options.GVK.Version, options.GVK.Kind, options.Namespace)
 	if options.EventHandlers == nil {
 		options.EventHandlers = []events.EventHandler{}
 	}
 	eventHandlers := append(options.EventHandlers, events.NewLoggingEventHandler(options.LoggingLevel))
 
-	h := &ReconcileAnsibleOperator{
-		Client:        mrg.GetClient(),
+	h := &AnsibleOperatorReconciler{
+		Client:        mgr.GetClient(),
 		GVK:           options.GVK,
 		Runner:        options.Runner,
 		EventHandlers: eventHandlers,
 	}
 
 	// Register the GVK with the schema
-	mrg.GetScheme().AddKnownTypeWithName(options.GVK, &unstructured.Unstructured{})
-	metav1.AddToGroupVersion(mrg.GetScheme(), schema.GroupVersion{
+	mgr.GetScheme().AddKnownTypeWithName(options.GVK, &unstructured.Unstructured{})
+	metav1.AddToGroupVersion(mgr.GetScheme(), schema.GroupVersion{
 		Group:   options.GVK.Group,
 		Version: options.GVK.Version,
 	})
 
 	//Create new controller runtime controller and set the controller to watch GVK.
-	c, err := controller.New(fmt.Sprintf("%v-controller", strings.ToLower(options.GVK.Kind)), mrg, controller.Options{
+	c, err := controller.New(fmt.Sprintf("%v-controller", strings.ToLower(options.GVK.Kind)), mgr, controller.Options{
 		Reconciler: h,
 	})
 	if err != nil {

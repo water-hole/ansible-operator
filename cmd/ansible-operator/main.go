@@ -29,7 +29,7 @@ func main() {
 	flag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
 
-	mrg, err := manager.New(config.GetConfigOrDie(), manager.Options{})
+	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,11 +41,11 @@ func main() {
 	proxy.RunProxy(done, proxy.Options{
 		Address:    "localhost",
 		Port:       8888,
-		KubeConfig: mrg.GetConfig(),
+		KubeConfig: mgr.GetConfig(),
 	})
 
 	// start the operator
-	go runSDK(done, mrg)
+	go runSDK(done, mgr)
 
 	// wait for either to finish
 	err = <-done
@@ -56,7 +56,7 @@ func main() {
 	}
 }
 
-func runSDK(done chan error, mrg manager.Manager) {
+func runSDK(done chan error, mgr manager.Manager) {
 	namespace := "default"
 	watches, err := runner.NewFromWatches("/opt/ansible/watches.yaml")
 	if err != nil {
@@ -67,8 +67,12 @@ func runSDK(done chan error, mrg manager.Manager) {
 	rand.Seed(time.Now().Unix())
 
 	for gvk, runner := range watches {
-		controller.NewController(mrg, gvk, namespace, runner)
+		controller.New(mgr, controller.Options{
+			GVK:       gvk,
+			Namespace: namespace,
+			Runner:    runner,
+		})
 	}
-	log.Fatal(mrg.Start(signals.SetupSignalHandler()))
+	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
 	done <- nil
 }
