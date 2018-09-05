@@ -9,6 +9,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
+	"github.com/water-hole/ansible-operator/pkg/handler/events"
 	"github.com/water-hole/ansible-operator/pkg/proxy/kubeconfig"
 	"github.com/water-hole/ansible-operator/pkg/runner"
 	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
@@ -23,18 +24,18 @@ import (
 // options Handle with your implementation of this interface, and it will be
 // used.
 type EventHandler interface {
-	Handle(context.Context, sdk.Event, runner.Runner) error
+	Handle(context.Context, sdk.Event, runner.Runner, []events.EventHandler) error
 }
 
 // EventHandlerFunc is a adapter to use functions as handlers.
-type EventHandlerFunc func(context.Context, sdk.Event, runner.Runner) error
+type EventHandlerFunc func(context.Context, sdk.Event, runner.Runner, []events.EventHandler) error
 
 // Handle calls f(ctx, event, run)
-func (f EventHandlerFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner) error {
-	return f(ctx, event, run)
+func (f EventHandlerFunc) Handle(ctx context.Context, event sdk.Event, run runner.Runner, eventHandlers []events.EventHandler) error {
+	return f(ctx, event, run, eventHandlers)
 }
 
-func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) error {
+func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, eventHandlers []events.EventHandler) error {
 	u, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
@@ -69,6 +70,9 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 	// iterate events from ansible, looking for the final one
 	statusEvent := eventapi.StatusJobEvent{}
 	for event := range eventChan {
+		for _, eHandler := range eventHandlers {
+			go eHandler.Handle(u, event)
+		}
 		if event.Event == "playbook_on_stats" {
 			// convert to StatusJobEvent; would love a better way to do this
 			data, err := json.Marshal(event)
@@ -110,8 +114,10 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner) erro
 // The GVKToRunner map must be passed in and must have at least a single
 // mapping.
 type Options struct {
-	Handle      EventHandler
-	GVKToRunner map[schema.GroupVersionKind]runner.Runner
+	Handle        EventHandler
+	GVKToRunner   map[schema.GroupVersionKind]runner.Runner
+	EventHandlers []events.EventHandler
+	LoggingLevel  events.LogLevel
 }
 
 // New will create a ansible handler to be used by the sdk. New will create a
@@ -126,12 +132,22 @@ func New(options Options) (sdk.Handler, error) {
 	if options.Handle != nil {
 		handle = options.Handle
 	}
-	return &handler{crdToPlaybook: options.GVKToRunner, handle: handle}, nil
+	if options.EventHandlers == nil {
+		options.EventHandlers = []events.EventHandler{}
+
+	}
+	eventHandlers := append(options.EventHandlers, events.NewLoggingEventHandler(options.LoggingLevel))
+	return &handler{
+		crdToPlaybook: options.GVKToRunner,
+		handle:        handle,
+		eventHandlers: eventHandlers,
+	}, nil
 }
 
 type handler struct {
 	crdToPlaybook map[schema.GroupVersionKind]runner.Runner
 	handle        EventHandler
+	eventHandlers []events.EventHandler
 }
 
 // Handle conform to the sdk.Handle interface.
@@ -141,5 +157,5 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 		logrus.Warnf("unable to find playbook mapping for gvk: %v", event.Object.GetObjectKind().GroupVersionKind())
 		return nil
 	}
-	return h.handle.Handle(ctx, event, p)
+	return h.handle.Handle(ctx, event, p, h.eventHandlers)
 }
