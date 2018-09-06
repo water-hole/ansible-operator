@@ -6,7 +6,7 @@ spec:
   group: app.example.com
   names:
     kind: Database
-    listKind: databaseList
+    listKind: DatabaseList
     plural: databases
     singular: database
   scope: Namespaced
