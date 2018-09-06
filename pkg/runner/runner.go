@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -142,8 +143,7 @@ type runner struct {
 
 func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan eventapi.JobEvent, error) {
 	if u.GetDeletionTimestamp() != nil && !r.isFinalizerRun(u) {
-		logger.Warn("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
-		return nil, nil
+		return nil, errors.New("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
 	}
 	ident := strconv.Itoa(rand.Int())
 	logger := logrus.WithFields(logrus.Fields{
