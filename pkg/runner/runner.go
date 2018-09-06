@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -24,16 +25,26 @@ import (
 // and run the correct code.
 type Runner interface {
 	Run(*unstructured.Unstructured, string) (chan eventapi.JobEvent, error)
+	GetFinalizer() (string, bool)
 }
 
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
 // The mapping is used to compose an ansible operator.
 type watch struct {
-	Version  string `yaml:"version"`
-	Group    string `yaml:"group"`
-	Kind     string `yaml:"kind"`
-	Playbook string `yaml:"playbook"`
-	Role     string `yaml:"role"`
+	Version   string     `yaml:"version"`
+	Group     string     `yaml:"group"`
+	Kind      string     `yaml:"kind"`
+	Playbook  string     `yaml:"playbook"`
+	Role      string     `yaml:"role"`
+	Finalizer *Finalizer `yaml:"finalizer"`
+}
+
+// Finalizer - Expose finalizer to be used by a user.
+type Finalizer struct {
+	Name     string                 `yaml:"name"`
+	Playbook string                 `yaml:"playbook"`
+	Role     string                 `yaml:"role"`
+	Vars     map[string]interface{} `yaml:"vars"`
 }
 
 // NewFromWatches reads the operator's config file at the provided path.
@@ -63,15 +74,17 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 		}
 		switch {
 		case w.Playbook != "":
-			if !filepath.IsAbs(w.Playbook) {
-				return nil, fmt.Errorf("Path must be absolute for %v", s)
+			r, err := NewForPlaybook(w.Playbook, s, w.Finalizer)
+			if err != nil {
+				return nil, err
 			}
-			m[s] = NewForPlaybook(w.Playbook, s)
+			m[s] = r
 		case w.Role != "":
-			if !filepath.IsAbs(w.Role) {
-				return nil, fmt.Errorf("Path must be absolute for %v", s)
+			r, err := NewForRole(w.Role, s, w.Finalizer)
+			if err != nil {
+				return nil, err
 			}
-			m[s] = NewForRole(w.Role, s)
+			m[s] = r
 		default:
 			return nil, fmt.Errorf("Either playbook or role must be defined for %v", s)
 		}
@@ -80,39 +93,58 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 }
 
 // NewForPlaybook returns a new Runner based on the path to an ansible playbook.
-func NewForPlaybook(path string, gvk schema.GroupVersionKind) Runner {
-	return &runner{
+func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finalizer) (Runner, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("playbook path must be absolute for %v", gvk)
+	}
+	r := &runner{
 		Path: path,
 		GVK:  gvk,
 		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
-			dc := exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
-			return dc
+			return exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
 		},
 	}
+	err := r.addFinalizer(finalizer)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // NewForRole returns a new Runner based on the path to an ansible role.
-func NewForRole(path string, gvk schema.GroupVersionKind) Runner {
+func NewForRole(path string, gvk schema.GroupVersionKind, finalizer *Finalizer) (Runner, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("role path must be absolute for %v", gvk)
+	}
 	path = strings.TrimRight(path, "/")
-	return &runner{
+	r := &runner{
 		Path: path,
 		GVK:  gvk,
 		cmdFunc: func(ident, inputDirPath string) *exec.Cmd {
 			rolePath, roleName := filepath.Split(path)
-			dc := exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
-			return dc
+			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
 		},
 	}
+	err := r.addFinalizer(finalizer)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // runner - implements the Runner interface for a GVK that's being watched.
 type runner struct {
-	Path    string                                     // path on disk to a playbook or role depending on what cmdFunc expects
-	GVK     schema.GroupVersionKind                    // GVK being watched that corresponds to the Path
-	cmdFunc func(ident, inputDirPath string) *exec.Cmd // returns a Cmd that runs ansible-runner
+	Path             string                  // path on disk to a playbook or role depending on what cmdFunc expects
+	GVK              schema.GroupVersionKind // GVK being watched that corresponds to the Path
+	Finalizer        *Finalizer
+	cmdFunc          func(ident, inputDirPath string) *exec.Cmd // returns a Cmd that runs ansible-runner
+	finalizerCmdFunc func(ident, inputDirPath string) *exec.Cmd
 }
 
 func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan eventapi.JobEvent, error) {
+	if u.GetDeletionTimestamp() != nil && !r.isFinalizerRun(u) {
+		return nil, errors.New("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
+	}
 	ident := strconv.Itoa(rand.Int())
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "runner",
@@ -153,7 +185,14 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 	}
 
 	go func() {
-		dc := r.cmdFunc(ident, inputDir.Path)
+		var dc *exec.Cmd
+		if r.isFinalizerRun(u) {
+			logger.Debugf("Resource is marked for deletion, running finalizer %s", r.Finalizer.Name)
+			dc = r.finalizerCmdFunc(ident, inputDir.Path)
+		} else {
+			dc = r.cmdFunc(ident, inputDir.Path)
+		}
+
 		err := dc.Run()
 		if err != nil {
 			logger.Errorf("error from ansible-runner: %s", err.Error())
@@ -169,9 +208,54 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 		}
 	}()
 	return receiver.Events, nil
-
 }
 
+func (r *runner) GetFinalizer() (string, bool) {
+	if r.Finalizer != nil {
+		return r.Finalizer.Name, true
+	}
+	return "", false
+}
+
+func (r *runner) isFinalizerRun(u *unstructured.Unstructured) bool {
+	finalizersSet := r.Finalizer != nil && u.GetFinalizers() != nil
+	// The the resource is deleted and our finalizer is present, we need to run the finalizer
+	if finalizersSet && u.GetDeletionTimestamp() != nil {
+		for _, f := range u.GetFinalizers() {
+			if f == r.Finalizer.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *runner) addFinalizer(finalizer *Finalizer) error {
+	r.Finalizer = finalizer
+	switch {
+	case finalizer == nil:
+		return nil
+	case finalizer.Playbook != "":
+		if !filepath.IsAbs(finalizer.Playbook) {
+			return fmt.Errorf("finalizer playbook path must be absolute for %v", r.GVK)
+		}
+		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
+			return exec.Command("ansible-runner", "-vv", "-p", finalizer.Playbook, "-i", ident, "run", inputDirPath)
+		}
+	case finalizer.Role != "":
+		if !filepath.IsAbs(finalizer.Role) {
+			return fmt.Errorf("finalizer role path must be absolute for %v", r.GVK)
+		}
+		r.finalizerCmdFunc = func(ident, inputDirPath string) *exec.Cmd {
+			path := strings.TrimRight(finalizer.Role, "/")
+			rolePath, roleName := filepath.Split(path)
+			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
+		}
+	case len(finalizer.Vars) != 0:
+		r.finalizerCmdFunc = r.cmdFunc
+	}
+	return nil
+}
 func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interface{} {
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
@@ -183,5 +267,10 @@ func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interfa
 	parameters["meta"] = map[string]string{"namespace": u.GetNamespace(), "name": u.GetName()}
 	objectKey := fmt.Sprintf("_%v_%v", strings.Replace(r.GVK.Group, ".", "_", -1), strings.ToLower(r.GVK.Kind))
 	parameters[objectKey] = u.Object
+	if r.isFinalizerRun(u) {
+		for k, v := range r.Finalizer.Vars {
+			parameters[k] = v
+		}
+	}
 	return parameters
 }

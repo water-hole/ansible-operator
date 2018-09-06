@@ -41,6 +41,23 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, even
 		logrus.Warnf("object was not unstructured - %#v", event.Object)
 		return nil
 	}
+	deleted := u.GetDeletionTimestamp() != nil
+	finalizer, finalizerExists := run.GetFinalizer()
+	pendingFinalizers := u.GetFinalizers()
+	// If the resource is being deleted we don't want to add the finalizer again
+	if finalizerExists && !deleted && !contains(pendingFinalizers, finalizer) {
+		logrus.Debugf("Adding finalizer %s to resource", finalizer)
+		finalizers := append(pendingFinalizers, finalizer)
+		u.SetFinalizers(finalizers)
+		sdk.Update(u)
+		return nil
+	}
+
+	if !contains(pendingFinalizers, finalizer) && deleted {
+		logrus.Info("Resource is terminated, skipping reconcilation")
+		return nil
+	}
+
 	//Default spec to empty map.
 	s := u.Object["spec"]
 	_, ok = s.(map[string]interface{})
@@ -62,6 +79,7 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, even
 		return err
 	}
 	defer os.Remove(kc.Name())
+
 	eventChan, err := run.Run(u, kc.Name())
 	if err != nil {
 		return err
@@ -91,22 +109,55 @@ func defaultHandle(ctx context.Context, event sdk.Event, run runner.Runner, even
 		return err
 	}
 
+	// We only want to update the CustomResource once, so we'll track changes and do it at the end
+	var needsUpdate bool
+
+	runSuccessful := true
+	for _, count := range statusEvent.EventData.Failures {
+		if count > 0 {
+			runSuccessful = false
+			break
+		}
+	}
+
+	// The finalizer has run successfully, time to remove it
+	if deleted && finalizerExists && runSuccessful {
+		finalizers := []string{}
+		for _, pendingFinalizer := range pendingFinalizers {
+			if pendingFinalizer != finalizer {
+				finalizers = append(finalizers, pendingFinalizer)
+			}
+		}
+		u.SetFinalizers(finalizers)
+		needsUpdate = true
+	}
 	statusMap, ok := u.Object["status"].(map[string]interface{})
 	if !ok {
 		u.Object["status"] = ResourceStatus{
 			Status: NewStatusFromStatusJobEvent(statusEvent),
 		}
-		sdk.Update(u)
 		logrus.Infof("adding status for the first time")
-		return nil
+		needsUpdate = true
+	} else {
+		// Need to conver the map[string]interface into a resource status.
+		if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
+			u.Object["status"] = status
+			needsUpdate = true
+		}
 	}
-	// Need to conver the map[string]interface into a resource status.
-	if update, status := UpdateResourceStatus(statusMap, statusEvent); update {
-		u.Object["status"] = status
+	if needsUpdate {
 		sdk.Update(u)
-		return nil
 	}
 	return nil
+}
+
+func contains(l []string, s string) bool {
+	for _, elem := range l {
+		if elem == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Options will be used to tell the new ansible handler how to behave. You have
