@@ -26,8 +26,8 @@ type Options struct {
 	GVK           schema.GroupVersionKind
 }
 
-// New - Creates a new ansible operator controller and adds it to the manager
-func New(mgr manager.Manager, options Options) {
+// Add - Creates a new ansible operator controller and adds it to the manager
+func Add(mgr manager.Manager, options Options) {
 	logrus.Infof("Watching %s/%v, %s, %s", options.GVK.Group, options.GVK.Version, options.GVK.Kind, options.Namespace)
 	if options.EventHandlers == nil {
 		options.EventHandlers = []events.EventHandler{}

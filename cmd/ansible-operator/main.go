@@ -67,7 +67,7 @@ func runSDK(done chan error, mgr manager.Manager) {
 	rand.Seed(time.Now().Unix())
 
 	for gvk, runner := range watches {
-		controller.New(mgr, controller.Options{
+		controller.Add(mgr, controller.Options{
 			GVK:       gvk,
 			Namespace: namespace,
 			Runner:    runner,
