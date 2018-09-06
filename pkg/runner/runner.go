@@ -141,6 +141,10 @@ type runner struct {
 }
 
 func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan eventapi.JobEvent, error) {
+	if u.GetDeletionTimestamp() != nil && !r.isFinalizerRun(u) {
+		logger.Warn("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
+		return nil, nil
+	}
 	ident := strconv.Itoa(rand.Int())
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "runner",
@@ -182,16 +186,9 @@ func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan even
 
 	go func() {
 		var dc *exec.Cmd
-		deleted := u.GetDeletionTimestamp() != nil
-		if deleted {
-			if r.isFinalizerRun(u) {
-				logger.Debugf("Resource is marked for deletion, running finalizer %s", r.Finalizer.Name)
-				dc = r.finalizerCmdFunc(ident, inputDir.Path)
-			} else {
-				logger.Debug("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
-				receiver.Close()
-				return
-			}
+		if r.isFinalizerRun(u) {
+			logger.Debugf("Resource is marked for deletion, running finalizer %s", r.Finalizer.Name)
+			dc = r.finalizerCmdFunc(ident, inputDir.Path)
 		} else {
 			dc = r.cmdFunc(ident, inputDir.Path)
 		}
@@ -222,7 +219,7 @@ func (r *runner) GetFinalizer() (string, bool) {
 
 func (r *runner) isFinalizerRun(u *unstructured.Unstructured) bool {
 	finalizersSet := r.Finalizer != nil && u.GetFinalizers() != nil
-	// If finalizers are set and we find our finalizer in them, we need to run the finalizer
+	// The the resource is deleted and our finalizer is present, we need to run the finalizer
 	if finalizersSet && u.GetDeletionTimestamp() != nil {
 		for _, f := range u.GetFinalizers() {
 			if f == r.Finalizer.Name {
