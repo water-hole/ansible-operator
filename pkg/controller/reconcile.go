@@ -11,6 +11,7 @@ import (
 	"github.com/water-hole/ansible-operator/pkg/proxy/kubeconfig"
 	"github.com/water-hole/ansible-operator/pkg/runner"
 	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -31,6 +32,9 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(r.GVK)
 	err := r.Client.Get(context.TODO(), request.NamespacedName, u)
+	if apierrors.IsNotFound(err) {
+		return reconcile.Result{}, nil
+	}
 	if err != nil {
 		return reconcile.Result{}, err
 	}
