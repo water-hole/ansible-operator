@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/operator-framework/operator-sdk/pkg/ansible/controller"
+	proxy "github.com/operator-framework/operator-sdk/pkg/ansible/proxy"
+	"github.com/operator-framework/operator-sdk/pkg/ansible/runner"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
-	"github.com/water-hole/ansible-operator/pkg/controller"
-	proxy "github.com/water-hole/ansible-operator/pkg/proxy"
-	"github.com/water-hole/ansible-operator/pkg/runner"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"

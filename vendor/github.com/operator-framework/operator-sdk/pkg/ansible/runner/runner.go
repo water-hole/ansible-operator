@@ -1,3 +1,17 @@
+// Copyright 2018 The Operator-SDK Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package runner
 
 import (
@@ -12,10 +26,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/operator-framework/operator-sdk/pkg/ansible/paramconv"
+	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/eventapi"
+	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/internal/inputdir"
 	"github.com/sirupsen/logrus"
-	"github.com/water-hole/ansible-operator/pkg/paramconv"
-	"github.com/water-hole/ansible-operator/pkg/runner/eventapi"
-	"github.com/water-hole/ansible-operator/pkg/runner/internal/inputdir"
 	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -86,7 +100,7 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 			}
 			m[s] = r
 		default:
-			return nil, fmt.Errorf("Either playbook or role must be defined for %v", s)
+			return nil, fmt.Errorf("either playbook or role must be defined for %v", s)
 		}
 	}
 	return m, nil
@@ -143,7 +157,7 @@ type runner struct {
 
 func (r *runner) Run(u *unstructured.Unstructured, kubeconfig string) (chan eventapi.JobEvent, error) {
 	if u.GetDeletionTimestamp() != nil && !r.isFinalizerRun(u) {
-		return nil, errors.New("Resource has been deleted, but no finalizer was matched, skipping reconciliation")
+		return nil, errors.New("resource has been deleted, but no finalizer was matched, skipping reconciliation")
 	}
 	ident := strconv.Itoa(rand.Int())
 	logger := logrus.WithFields(logrus.Fields{

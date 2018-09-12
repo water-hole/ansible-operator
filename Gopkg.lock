@@ -120,10 +120,21 @@
   revision = "cca7078d478f8520f85629ad7c68962d31ed7682"
 
 [[projects]]
-  branch = "master"
+  branch = "feature/add-AO-controller"
   name = "github.com/operator-framework/operator-sdk"
-  packages = ["version"]
-  revision = "ac46cd787d8c3a172a0e196cab04b3497eaed663"
+  packages = [
+    "pkg/ansible/controller",
+    "pkg/ansible/events",
+    "pkg/ansible/paramconv",
+    "pkg/ansible/proxy",
+    "pkg/ansible/proxy/kubeconfig",
+    "pkg/ansible/runner",
+    "pkg/ansible/runner/eventapi",
+    "pkg/ansible/runner/internal/inputdir",
+    "version"
+  ]
+  revision = "262f4a490f3bf20a163806cf2bb1a435913d4538"
+  source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
@@ -415,6 +426,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d69f97aef09cd72901e78e775a60d2b3cc8ea96333ebb76e02cb321b132b9433"
+  inputs-digest = "3ae5739b2d02e48d275f922d5155b5c5bf0767290b24fcbab8a275009cfd99b2"
   solver-name = "gps-cdcl"
   solver-version = 1
