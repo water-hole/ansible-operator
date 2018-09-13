@@ -120,7 +120,7 @@
   revision = "cca7078d478f8520f85629ad7c68962d31ed7682"
 
 [[projects]]
-  branch = "feature/add-AO-controller"
+  branch = "feature/add-logging-level"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/ansible/controller",
@@ -133,7 +133,7 @@
     "pkg/ansible/runner/internal/inputdir",
     "version"
   ]
-  revision = "262f4a490f3bf20a163806cf2bb1a435913d4538"
+  revision = "97a90b070fec52eaa74de7c3895adf4dbaf0d668"
   source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]
@@ -426,6 +426,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3ae5739b2d02e48d275f922d5155b5c5bf0767290b24fcbab8a275009cfd99b2"
+  inputs-digest = "f76b16dd2484e2f1f215e8cf942401f5c00fc8f96aa0edc94b64e12fd312ee45"
   solver-name = "gps-cdcl"
   solver-version = 1

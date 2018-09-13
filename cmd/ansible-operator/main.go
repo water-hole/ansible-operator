@@ -26,6 +26,11 @@ func printVersion() {
 }
 
 func main() {
+	fs := flag.NewFlagSet("ansible-operator", flag.ExitOnError)
+	f := controller.AddGoFlags(fs)
+	flag.Usage = fs.Usage
+	flag.CommandLine = fs
+
 	flag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
 
@@ -45,7 +50,7 @@ func main() {
 	})
 
 	// start the operator
-	go runSDK(done, mgr)
+	go runSDK(done, mgr, f)
 
 	// wait for either to finish
 	err = <-done
@@ -56,7 +61,7 @@ func main() {
 	}
 }
 
-func runSDK(done chan error, mgr manager.Manager) {
+func runSDK(done chan error, mgr manager.Manager, f *controller.Flags) {
 	namespace := "default"
 	watches, err := runner.NewFromWatches("/opt/ansible/watches.yaml")
 	if err != nil {
@@ -65,12 +70,14 @@ func runSDK(done chan error, mgr manager.Manager) {
 		return
 	}
 	rand.Seed(time.Now().Unix())
+	o := f.CreateOptions()
 
 	for gvk, runner := range watches {
 		controller.Add(mgr, controller.Options{
-			GVK:       gvk,
-			Namespace: namespace,
-			Runner:    runner,
+			GVK:          gvk,
+			Namespace:    namespace,
+			Runner:       runner,
+			LoggingLevel: o.LoggingLevel,
 		})
 	}
 	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
