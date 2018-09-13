@@ -1,4 +1,4 @@
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: ansible-operator
@@ -33,14 +33,15 @@ rules:
 
 ---
 
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: default-account-app-operator
 subjects:
 - kind: ServiceAccount
   name: default
+  namespace: default
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: ansible-operator
   apiGroup: rbac.authorization.k8s.io
