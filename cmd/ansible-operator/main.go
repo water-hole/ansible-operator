@@ -17,6 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
 
 	"github.com/sirupsen/logrus"
+	"os"
+	"strconv"
 )
 
 func printVersion() {
@@ -29,7 +31,16 @@ func main() {
 	flag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
 
-	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{})
+	syncPeriod := time.Duration(60 * time.Second)
+
+	if r, ok := os.LookupEnv("RESYNC_PERIOD"); ok {
+		if rp, err := strconv.Atoi(r); err == nil {
+			syncPeriod = time.Duration(rp * int(time.Second))
+		}
+	}
+
+	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{SyncPeriod: &syncPeriod})
+
 	if err != nil {
 		log.Fatal(err)
 	}
