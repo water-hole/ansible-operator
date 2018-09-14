@@ -120,10 +120,21 @@
   revision = "cca7078d478f8520f85629ad7c68962d31ed7682"
 
 [[projects]]
-  branch = "master"
+  branch = "feature/add-logging-level"
   name = "github.com/operator-framework/operator-sdk"
-  packages = ["version"]
-  revision = "ac46cd787d8c3a172a0e196cab04b3497eaed663"
+  packages = [
+    "pkg/ansible/controller",
+    "pkg/ansible/events",
+    "pkg/ansible/paramconv",
+    "pkg/ansible/proxy",
+    "pkg/ansible/proxy/kubeconfig",
+    "pkg/ansible/runner",
+    "pkg/ansible/runner/eventapi",
+    "pkg/ansible/runner/internal/inputdir",
+    "version"
+  ]
+  revision = "3e6947990cd6de12e323d9345a8594bd244ec0d4"
+  source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
@@ -415,6 +426,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d69f97aef09cd72901e78e775a60d2b3cc8ea96333ebb76e02cb321b132b9433"
+  inputs-digest = "f76b16dd2484e2f1f215e8cf942401f5c00fc8f96aa0edc94b64e12fd312ee45"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -91,7 +91,7 @@ func MakeRegexpArray(str string) ([]*regexp.Regexp, error) {
 func MakeRegexpArrayOrDie(str string) []*regexp.Regexp {
 	result, err := MakeRegexpArray(str)
 	if err != nil {
-		log.Fatalf("Error compiling re: %v", err)
+		log.Fatalf("error compiling re: %v", err)
 	}
 	return result
 }
