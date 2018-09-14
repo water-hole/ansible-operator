@@ -133,7 +133,7 @@
     "pkg/ansible/runner/internal/inputdir",
     "version"
   ]
-  revision = "97a90b070fec52eaa74de7c3895adf4dbaf0d668"
+  revision = "3e6947990cd6de12e323d9345a8594bd244ec0d4"
   source = "github.com/shawn-hurley/operator-sdk"
 
 [[projects]]

@@ -33,6 +33,7 @@ func main() {
 
 	flag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
+	logrus.Infof("flags: %v", f)
 
 	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{})
 	if err != nil {
@@ -70,15 +71,15 @@ func runSDK(done chan error, mgr manager.Manager, f *controller.Flags) {
 		return
 	}
 	rand.Seed(time.Now().Unix())
-	o := f.CreateOptions()
 
 	for gvk, runner := range watches {
-		controller.Add(mgr, controller.Options{
-			GVK:          gvk,
-			Namespace:    namespace,
-			Runner:       runner,
-			LoggingLevel: o.LoggingLevel,
-		})
+		o := controller.Options{
+			GVK:       gvk,
+			Namespace: namespace,
+			Runner:    runner,
+		}
+		f.ApplyToOptions(&o)
+		controller.Add(mgr, o)
 	}
 	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
 	done <- nil
