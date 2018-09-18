@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/water-hole/ansible-operator/pkg/events"
@@ -60,4 +61,11 @@ func Add(mgr manager.Manager, options Options) {
 	if err := c.Watch(&source.Kind{Type: u}, &crthandler.EnqueueRequestForObject{}); err != nil {
 		log.Fatal(err)
 	}
+	r := NewReconcileLoop(time.Duration(time.Minute)*1, options.GVK, mgr.GetClient())
+	cs := &source.Channel{Source: r.Source}
+	cs.InjectStopChannel(r.Stop)
+	if err := c.Watch(cs, &crthandler.EnqueueRequestForObject{}); err != nil {
+		log.Fatal(err)
+	}
+	r.Start()
 }
