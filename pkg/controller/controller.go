@@ -25,6 +25,9 @@ type Options struct {
 	Runner        runner.Runner
 	Namespace     string
 	GVK           schema.GroupVersionKind
+	//StopChannel is need to deal with the bug:
+	// https://github.com/kubernetes-sigs/controller-runtime/issues/103
+	StopChannel <-chan struct{}
 }
 
 // Add - Creates a new ansible operator controller and adds it to the manager
@@ -62,8 +65,9 @@ func Add(mgr manager.Manager, options Options) {
 		log.Fatal(err)
 	}
 	r := NewReconcileLoop(time.Duration(time.Minute)*1, options.GVK, mgr.GetClient())
+	r.Stop = options.StopChannel
 	cs := &source.Channel{Source: r.Source}
-	cs.InjectStopChannel(r.Stop)
+	cs.InjectStopChannel(options.StopChannel)
 	if err := c.Watch(cs, &crthandler.EnqueueRequestForObject{}); err != nil {
 		log.Fatal(err)
 	}
