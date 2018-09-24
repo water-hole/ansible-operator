@@ -140,10 +140,12 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 		}
 	}
 	if needsUpdate {
-		err := r.Client.Update(context.TODO(), u)
-		return reconcile.Result{}, err
+		err = r.Client.Update(context.TODO(), u)
 	}
-	return reconcile.Result{}, nil
+	if !runSuccessful {
+		return reconcile.Result{Requeue: true}, err
+	}
+	return reconcile.Result{}, err
 }
 
 func contains(l []string, s string) bool {

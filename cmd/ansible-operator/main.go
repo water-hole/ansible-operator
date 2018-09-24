@@ -65,14 +65,16 @@ func runSDK(done chan error, mgr manager.Manager) {
 		return
 	}
 	rand.Seed(time.Now().Unix())
+	c := signals.SetupSignalHandler()
 
 	for gvk, runner := range watches {
 		controller.Add(mgr, controller.Options{
-			GVK:       gvk,
-			Namespace: namespace,
-			Runner:    runner,
+			GVK:         gvk,
+			Namespace:   namespace,
+			Runner:      runner,
+			StopChannel: c,
 		})
 	}
-	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
+	log.Fatal(mgr.Start(c))
 	done <- nil
 }
