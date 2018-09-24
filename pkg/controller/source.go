@@ -33,8 +33,9 @@ func NewReconcileLoop(interval time.Duration, gvk schema.GroupVersionKind, c cli
 
 // Start - start the reconcile loop
 func (r *ReconcileLoop) Start() {
-	ticker := time.NewTicker(r.Interval)
 	go func() {
+		ticker := time.NewTicker(r.Interval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
@@ -54,7 +55,6 @@ func (r *ReconcileLoop) Start() {
 					r.Source <- e
 				}
 			case <-r.Stop:
-				ticker.Stop()
 				return
 			}
 		}
