@@ -107,3 +107,8 @@ tags
 
 
 # End of https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
+
+
+### Intellij ###
+# just ignore the entire .idea folder for now
+.idea
