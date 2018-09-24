@@ -18,6 +18,14 @@ const (
 
 	// Nothing -  this will log nothing.
 	Nothing
+
+	// Ansible Events
+	EventPlaybookOnTaskStart = "playbook_on_task_start"
+	EventRunnerOnOk          = "runner_on_ok"
+
+	// Ansible Task Actions
+	TaskActionSetFact = "set_fact"
+	TaskActionDebug   = "debug"
 )
 
 // EventHandler - knows how to handle job events.
@@ -37,17 +45,31 @@ func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.Job
 		"gvk":        u.GroupVersionKind().String(),
 		"event_type": e.Event,
 	})
-	t, ok := e.EventData["task"]
-	if ok {
-		log = log.WithField("task", t)
+
+	if l.LogLevel == Nothing {
+		return
 	}
-	switch l.LogLevel {
-	case Everything:
+
+	_, ok := e.EventData["task"]
+
+	// log only the following for the 'Tasks' LogLevel
+	if ok &&
+	   e.Event == EventPlaybookOnTaskStart &&
+	   e.EventData["task_action"] != TaskActionDebug &&
+	   e.EventData["task_action"] != TaskActionSetFact {
+		log.Infof("[playbook task]: %s", e.EventData["name"])
+		return
+	}
+	if ok &&
+	   e.Event == EventRunnerOnOk &&
+       e.EventData["task_action"] == TaskActionDebug {
+		log.Infof("[playbook debug]: %v", e.EventData["task_args"])
+		return
+	}
+
+	// log everything else for the 'Everything' LogLevel
+	if l.LogLevel == Everything {
 		log.Infof("event: %#v", e.EventData)
-	case Tasks:
-		if ok {
-			log.Infof("event: %#v", e.EventData)
-		}
 	}
 }
 
