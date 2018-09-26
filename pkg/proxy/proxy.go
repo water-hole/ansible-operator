@@ -70,7 +70,7 @@ func InjectOwnerReferenceHandler(h http.Handler) http.Handler {
 				http.Error(w, m, http.StatusInternalServerError)
 				return
 			}
-			logrus.Printf(string(newBody))
+			logrus.Debugf(string(newBody))
 			req.Body = ioutil.NopCloser(bytes.NewBuffer(newBody))
 			req.ContentLength = int64(len(newBody))
 		}
