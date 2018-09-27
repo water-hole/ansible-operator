@@ -24,6 +24,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/ansible/proxy/kubeconfig"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/eventapi"
+
 	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

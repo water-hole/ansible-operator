@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Based on https://github.com/iancoleman/strcase
 
 package paramconv
@@ -20,13 +21,15 @@ import (
 	"strings"
 )
 
-var numberSequence = regexp.MustCompile(`([a-zA-Z])(\d+)([a-zA-Z]?)`)
-var numberReplacement = []byte(`$1 $2 $3`)
-var wordMapping = map[string]string{
-	"http": "HTTP",
-	"url":  "URL",
-	"ip":   "IP",
-}
+var (
+	numberSequence    = regexp.MustCompile(`([a-zA-Z])(\d+)([a-zA-Z]?)`)
+	numberReplacement = []byte(`$1 $2 $3`)
+	wordMapping       = map[string]string{
+		"http": "HTTP",
+		"url":  "URL",
+		"ip":   "IP",
+	}
+)
 
 func addWordBoundariesToNumbers(s string) string {
 	b := []byte(s)

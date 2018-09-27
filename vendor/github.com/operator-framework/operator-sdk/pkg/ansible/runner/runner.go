@@ -233,7 +233,7 @@ func (r *runner) GetFinalizer() (string, bool) {
 
 func (r *runner) isFinalizerRun(u *unstructured.Unstructured) bool {
 	finalizersSet := r.Finalizer != nil && u.GetFinalizers() != nil
-	// The the resource is deleted and our finalizer is present, we need to run the finalizer
+	// The resource is deleted and our finalizer is present, we need to run the finalizer
 	if finalizersSet && u.GetDeletionTimestamp() != nil {
 		for _, f := range u.GetFinalizers() {
 			if f == r.Finalizer.Name {
@@ -270,6 +270,19 @@ func (r *runner) addFinalizer(finalizer *Finalizer) error {
 	}
 	return nil
 }
+
+// makeParameters - creates the extravars parameters for ansible
+// The resulting structure in json is:
+// { "meta": {
+//      "name": <object_name>,
+//      "namespace": <object_namespace>,
+//   },
+//   <cr_spec_fields_as_snake_case>,
+//   ...
+//   _<group_as_snake>_<kind>: {
+//       <cr_object as is
+//   }
+// }
 func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interface{} {
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})

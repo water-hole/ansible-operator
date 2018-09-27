@@ -22,6 +22,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/ansible/events"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner"
+
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -39,7 +40,11 @@ type Options struct {
 	Runner        runner.Runner
 	Namespace     string
 	GVK           schema.GroupVersionKind
+<<<<<<< HEAD
 	//StopChannel is need to deal with the bug:
+=======
+	// StopChannel is used to deal with the bug:
+>>>>>>> vendor stuff
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/103
 	StopChannel <-chan struct{}
 }
@@ -52,7 +57,7 @@ func Add(mgr manager.Manager, options Options) {
 	}
 	eventHandlers := append(options.EventHandlers, events.NewLoggingEventHandler(options.LoggingLevel))
 
-	h := &AnsibleOperatorReconciler{
+	aor := &AnsibleOperatorReconciler{
 		Client:        mgr.GetClient(),
 		GVK:           options.GVK,
 		Runner:        options.Runner,
@@ -68,7 +73,7 @@ func Add(mgr manager.Manager, options Options) {
 
 	//Create new controller runtime controller and set the controller to watch GVK.
 	c, err := controller.New(fmt.Sprintf("%v-controller", strings.ToLower(options.GVK.Kind)), mgr, controller.Options{
-		Reconciler: h,
+		Reconciler: aor,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -78,7 +83,12 @@ func Add(mgr manager.Manager, options Options) {
 	if err := c.Watch(&source.Kind{Type: u}, &crthandler.EnqueueRequestForObject{}); err != nil {
 		log.Fatal(err)
 	}
+<<<<<<< HEAD
 	r := NewReconcileLoop(time.Duration(time.Minute)*1, options.GVK, mgr.GetClient())
+=======
+
+	r := NewReconcileLoop(time.Minute*1, options.GVK, mgr.GetClient())
+>>>>>>> vendor stuff
 	r.Stop = options.StopChannel
 	cs := &source.Channel{Source: r.Source}
 	cs.InjectStopChannel(options.StopChannel)

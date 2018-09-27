@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
@@ -40,7 +39,7 @@ func InjectOwnerReferenceHandler(h http.Handler) http.Handler {
 		if req.Method == http.MethodPost {
 			logrus.Info("injecting owner reference")
 			dump, _ := httputil.DumpRequest(req, false)
-			fmt.Println(string(dump))
+			logrus.Debugf(string(dump))
 
 			user, _, ok := req.BasicAuth()
 			if !ok {
@@ -59,7 +58,7 @@ func InjectOwnerReferenceHandler(h http.Handler) http.Handler {
 			owner := metav1.OwnerReference{}
 			json.Unmarshal(authString, &owner)
 
-			logrus.Printf("%#+v", owner)
+			logrus.Debugf("%#+v", owner)
 
 			body, err := ioutil.ReadAll(req.Body)
 			if err != nil {

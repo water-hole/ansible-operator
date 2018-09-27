@@ -102,7 +102,6 @@ func (e *EventReceiver) Close() {
 }
 
 func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
-
 	if r.URL.Path != e.URLPath {
 		http.NotFound(w, r)
 		e.logger.WithFields(logrus.Fields{
@@ -160,27 +159,26 @@ func (e *EventReceiver) handleEvents(w http.ResponseWriter, r *http.Request) {
 			"code": "410",
 		}).Info("stopped and not accepting additional events for this job")
 		return
+	}
+	// ansible-runner sends "status events" and "ansible events". The "status
+	// events" signify a change in the state of ansible-runner itself, which
+	// we're not currently interested in.
+	// https://ansible-runner.readthedocs.io/en/latest/external_interface.html#event-structure
+	if event.UUID == "" {
+		e.logger.Info("dropping event that is not a JobEvent")
 	} else {
-		// ansible-runner sends "status events" and "ansible events". The "status
-		// events" signify a change in the state of ansible-runner itself, which
-		// we're not currently interested in.
-		// https://ansible-runner.readthedocs.io/en/latest/external_interface.html#event-structure
-		if event.UUID == "" {
-			e.logger.Info("dropping event that is not a JobEvent")
-		} else {
-			// timeout if the channel blocks for too long
-			timeout := time.NewTimer(10 * time.Second)
-			select {
-			case e.Events <- event:
-			case <-timeout.C:
-				e.logger.WithFields(logrus.Fields{
-					"code": "500",
-				}).Warn("timed out writing event to channel")
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			_ = timeout.Stop()
+		// timeout if the channel blocks for too long
+		timeout := time.NewTimer(10 * time.Second)
+		select {
+		case e.Events <- event:
+		case <-timeout.C:
+			e.logger.WithFields(logrus.Fields{
+				"code": "500",
+			}).Warn("timed out writing event to channel")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+		_ = timeout.Stop()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
