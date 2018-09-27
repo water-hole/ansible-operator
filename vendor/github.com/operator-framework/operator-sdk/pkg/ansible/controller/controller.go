@@ -40,11 +40,7 @@ type Options struct {
 	Runner        runner.Runner
 	Namespace     string
 	GVK           schema.GroupVersionKind
-<<<<<<< HEAD
-	//StopChannel is need to deal with the bug:
-=======
 	// StopChannel is used to deal with the bug:
->>>>>>> vendor stuff
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/103
 	StopChannel <-chan struct{}
 }
@@ -83,12 +79,8 @@ func Add(mgr manager.Manager, options Options) {
 	if err := c.Watch(&source.Kind{Type: u}, &crthandler.EnqueueRequestForObject{}); err != nil {
 		log.Fatal(err)
 	}
-<<<<<<< HEAD
-	r := NewReconcileLoop(time.Duration(time.Minute)*1, options.GVK, mgr.GetClient())
-=======
 
 	r := NewReconcileLoop(time.Minute*1, options.GVK, mgr.GetClient())
->>>>>>> vendor stuff
 	r.Stop = options.StopChannel
 	cs := &source.Channel{Source: r.Source}
 	cs.InjectStopChannel(options.StopChannel)

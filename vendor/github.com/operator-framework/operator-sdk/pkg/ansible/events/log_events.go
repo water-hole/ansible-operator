@@ -32,15 +32,6 @@ const (
 
 	// Nothing -  this will log nothing.
 	Nothing
-
-	// Ansible Events
-	EventPlaybookOnTaskStart = "playbook_on_task_start"
-	EventRunnerOnOk          = "runner_on_ok"
-	EventRunnerOnFailed      = "runner_on_failed"
-
-	// Ansible Task Actions
-	TaskActionSetFact = "set_fact"
-	TaskActionDebug   = "debug"
 )
 
 // EventHandler - knows how to handle job events.
@@ -60,35 +51,17 @@ func (l loggingEventHandler) Handle(u *unstructured.Unstructured, e eventapi.Job
 		"gvk":        u.GroupVersionKind().String(),
 		"event_type": e.Event,
 	})
-
-	if l.LogLevel == Nothing {
-		return
-	}
-
-	// log only the following for the 'Tasks' LogLevel
 	t, ok := e.EventData["task"]
 	if ok {
-		setFactAction := e.EventData["task_action"] == TaskActionSetFact
-		debugAction   := e.EventData["task_action"] == TaskActionDebug
-
-		if e.Event == EventPlaybookOnTaskStart && !setFactAction && !debugAction {
-			log.Infof("[playbook task]: %s", e.EventData["name"])
-			return
-		}
-		if e.Event == EventRunnerOnOk && debugAction {
-			log.Infof("[playbook debug]: %v", e.EventData["task_args"])
-			return
-		}
-		if e.Event == EventRunnerOnFailed {
-			log.Errorf("[failed]: [playbook task] '%s' failed with task_args - %v",
-				t, e.EventData["task_args"])
-			return
-		}
+		log = log.WithField("task", t)
 	}
-
-	// log everything else for the 'Everything' LogLevel
-	if l.LogLevel == Everything {
+	switch l.LogLevel {
+	case Everything:
 		log.Infof("event: %#v", e.EventData)
+	case Tasks:
+		if ok {
+			log.Infof("event: %#v", e.EventData)
+		}
 	}
 }
 
