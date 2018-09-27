@@ -23,39 +23,38 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
-// clientCreatorFunc knows how to create a client and the corresponding list object that it should
-// deserialize into for any given group-version-kind.
-type clientCreatorFunc func(gvk schema.GroupVersionKind,
-	codecs serializer.CodecFactory,
-	scheme *runtime.Scheme,
-	baseConfig *rest.Config) (client rest.Interface, listObj runtime.Object, err error)
+// clientListWatcherFunc knows how to create a ListWatcher
+type createListWatcherFunc func(gvk schema.GroupVersionKind, ip *specificInformersMap) (*cache.ListWatch, error)
 
 // newSpecificInformersMap returns a new specificInformersMap (like
 // the generical InformersMap, except that it doesn't implement WaitForCacheSync).
 func newSpecificInformersMap(config *rest.Config,
 	scheme *runtime.Scheme,
 	mapper meta.RESTMapper,
-	resync time.Duration, createClient clientCreatorFunc) *specificInformersMap {
+	resync time.Duration,
+	namespace string,
+	createListWatcher createListWatcherFunc) *specificInformersMap {
 	ip := &specificInformersMap{
-		config:         config,
-		Scheme:         scheme,
-		mapper:         mapper,
-		informersByGVK: make(map[schema.GroupVersionKind]*MapEntry),
-		codecs:         serializer.NewCodecFactory(scheme),
-		paramCodec:     runtime.NewParameterCodec(scheme),
-		resync:         resync,
-		createClient:   createClient,
+		config:            config,
+		Scheme:            scheme,
+		mapper:            mapper,
+		informersByGVK:    make(map[schema.GroupVersionKind]*MapEntry),
+		codecs:            serializer.NewCodecFactory(scheme),
+		paramCodec:        runtime.NewParameterCodec(scheme),
+		resync:            resync,
+		createListWatcher: createListWatcher,
+		namespace:         namespace,
 	}
 	return ip
 }
@@ -105,7 +104,11 @@ type specificInformersMap struct {
 	// createClient knows how to create a client and a list object,
 	// and allows for abstracting over the particulars of structured vs
 	// unstructured objects.
-	createClient clientCreatorFunc
+	createListWatcher createListWatcherFunc
+
+	// namespace is the namespace that all ListWatches are restricted to
+	// default or empty string means all namespaces
+	namespace string
 }
 
 // Start calls Run on each of the informers and sets started to true.  Blocks on the stop channel.
@@ -131,6 +134,8 @@ func (ip *specificInformersMap) Start(stop <-chan struct{}) {
 
 // HasSyncedFuncs returns all the HasSynced functions for the informers in this map.
 func (ip *specificInformersMap) HasSyncedFuncs() []cache.InformerSynced {
+	ip.mu.RLock()
+	defer ip.mu.RUnlock()
 	syncedFuncs := make([]cache.InformerSynced, 0, len(ip.informersByGVK))
 	for _, informer := range ip.informersByGVK {
 		syncedFuncs = append(syncedFuncs, informer.Informer.HasSynced)
@@ -170,7 +175,7 @@ func (ip *specificInformersMap) Get(gvk schema.GroupVersionKind, obj runtime.Obj
 
 		// Create a NewSharedIndexInformer and add it to the map.
 		var lw *cache.ListWatch
-		lw, err := ip.newListWatch(gvk)
+		lw, err := ip.createListWatcher(gvk, ip)
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +212,7 @@ func (ip *specificInformersMap) Get(gvk schema.GroupVersionKind, obj runtime.Obj
 }
 
 // newListWatch returns a new ListWatch object that can be used to create a SharedIndexInformer.
-func (ip *specificInformersMap) newListWatch(gvk schema.GroupVersionKind) (*cache.ListWatch, error) {
+func createStructuredListWatch(gvk schema.GroupVersionKind, ip *specificInformersMap) (*cache.ListWatch, error) {
 	// Kubernetes APIs work against Resources, not GroupVersionKinds.  Map the
 	// groupVersionKind to the Resource API we will use.
 	mapping, err := ip.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
@@ -215,9 +220,12 @@ func (ip *specificInformersMap) newListWatch(gvk schema.GroupVersionKind) (*cach
 		return nil, err
 	}
 
-	// Construct a RESTClient for the groupVersionKind that we will use to
-	// talk to the apiserver, and the list object that we'll use to describe our results.
-	client, listObj, err := ip.createClient(gvk, ip.codecs, ip.Scheme, ip.config)
+	client, err := apiutil.RESTClientForGVK(gvk, ip.config, ip.codecs)
+	if err != nil {
+		return nil, err
+	}
+	listGVK := gvk.GroupVersion().WithKind(gvk.Kind + "List")
+	listObj, err := ip.Scheme.New(listGVK)
 	if err != nil {
 		return nil, err
 	}
@@ -226,49 +234,48 @@ func (ip *specificInformersMap) newListWatch(gvk schema.GroupVersionKind) (*cach
 	return &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			res := listObj.DeepCopyObject()
-			err := client.Get().Resource(mapping.Resource).VersionedParams(&opts, ip.paramCodec).Do().Into(res)
+			isNamespaceScoped := ip.namespace != "" && mapping.Scope.Name() != meta.RESTScopeNameRoot
+			err := client.Get().NamespaceIfScoped(ip.namespace, isNamespaceScoped).Resource(mapping.Resource.Resource).VersionedParams(&opts, ip.paramCodec).Do().Into(res)
 			return res, err
 		},
 		// Setup the watch function
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
 			// Watch needs to be set to true separately
 			opts.Watch = true
-			return client.Get().Resource(mapping.Resource).VersionedParams(&opts, ip.paramCodec).Watch()
+			isNamespaceScoped := ip.namespace != "" && mapping.Scope.Name() != meta.RESTScopeNameRoot
+			return client.Get().NamespaceIfScoped(ip.namespace, isNamespaceScoped).Resource(mapping.Resource.Resource).VersionedParams(&opts, ip.paramCodec).Watch()
 		},
 	}, nil
 }
 
-// createStructuredClient is a ClientCreatorFunc for use with structured
-// objects (i.e. not Unstructured/UnstructuredList).
-func createStructuredClient(gvk schema.GroupVersionKind,
-	codecs serializer.CodecFactory,
-	scheme *runtime.Scheme,
-	baseConfig *rest.Config) (rest.Interface, runtime.Object, error) {
-
-	client, err := apiutil.RESTClientForGVK(gvk, baseConfig, codecs)
+func createUnstructuredListWatch(gvk schema.GroupVersionKind, ip *specificInformersMap) (*cache.ListWatch, error) {
+	// Kubernetes APIs work against Resources, not GroupVersionKinds.  Map the
+	// groupVersionKind to the Resource API we will use.
+	mapping, err := ip.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	listGVK := gvk.GroupVersion().WithKind(gvk.Kind + "List")
-	listObj, err := scheme.New(listGVK)
+	dynamicClient, err := dynamic.NewForConfig(ip.config)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return client, listObj, nil
-}
-
-// createUnstructuredClient is a ClientCreatorFunc for use with Unstructured and UnstructuredList.
-func createUnstructuredClient(gvk schema.GroupVersionKind,
-	_ serializer.CodecFactory,
-	_ *runtime.Scheme,
-	baseConfig *rest.Config) (rest.Interface, runtime.Object, error) {
-
-	listObj := &unstructured.UnstructuredList{}
-	client, err := apiutil.RESTUnstructuredClientForGVK(gvk, baseConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return client, listObj, nil
+	// Create a new ListWatch for the obj
+	return &cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			if ip.namespace != "" && mapping.Scope.Name() != meta.RESTScopeNameRoot {
+				return dynamicClient.Resource(mapping.Resource).Namespace(ip.namespace).List(opts)
+			}
+			return dynamicClient.Resource(mapping.Resource).List(opts)
+		},
+		// Setup the watch function
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			// Watch needs to be set to true separately
+			opts.Watch = true
+			if ip.namespace != "" && mapping.Scope.Name() != meta.RESTScopeNameRoot {
+				return dynamicClient.Resource(mapping.Resource).Namespace(ip.namespace).Watch(opts)
+			}
+			return dynamicClient.Resource(mapping.Resource).Watch(opts)
+		},
+	}, nil
 }
