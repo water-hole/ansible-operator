@@ -190,7 +190,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:9ee3e1dd14bcc8a82dd178a5c35e303c97b1bf2dae9273fa82f26767917baff6"
+  digest = "1:09c83d90c07527f0eb23d5d7ddf0df3489b78db3fe885e508a494348b8d923a0"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/ansible/controller",
@@ -204,7 +204,7 @@
     "version",
   ]
   pruneopts = "UT"
-  revision = "2e23ca254e11d2efb6265962a545f0a68e7788ab"
+  revision = "5c53f6559d58d8af5a91e320bab9d6af29fc2af9"
 
 [[projects]]
   digest = "1:e5d0bd87abc2781d14e274807a470acd180f0499f8bf5bb18606e9ec22ad9de9"
