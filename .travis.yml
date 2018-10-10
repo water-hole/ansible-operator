@@ -68,7 +68,7 @@ jobs:
         - docker tag quay.io/water-hole/ansible-operator quay.io/water-hole/ansible-operator
         - docker push quay.io/water-hole/ansible-operator
         - cd $GOPATH/src/github.com/water-hole/ansible-operator/example
-        - docker build -t quay.io/water-hole/busybox-ansible-operator .
+        - docker build -f tmp/build/Dockerfile -t quay.io/water-hole/busybox-ansible-operator .
         - docker push quay.io/water-hole/busybox-ansible-operator
 
     - stage: deploy-release
