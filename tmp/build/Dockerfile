@@ -1,5 +1,7 @@
 FROM ansible/ansible-runner
 
+RUN yum update -y
+
 RUN pip install --upgrade setuptools
 RUN pip install openshift ansible-runner-http
 
