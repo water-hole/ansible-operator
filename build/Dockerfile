@@ -1,8 +1,7 @@
 FROM ansible/ansible-runner
 
-RUN yum update -y
-
 RUN pip install --upgrade setuptools
+RUN pip install urllib3==1.23
 RUN pip install openshift ansible-runner-http
 
 RUN echo "localhost ansible_connection=local" > /etc/ansible/hosts \
@@ -16,7 +15,7 @@ ENV OPERATOR=/usr/local/bin/ansible-operator \
     HOME=/opt/ansible
 
 # install operator binary
-ADD tmp/_output/bin/ansible-operator ${OPERATOR}
+ADD build/_output/bin/ansible-operator ${OPERATOR}
 
 COPY bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
