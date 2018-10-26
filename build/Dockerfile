@@ -2,7 +2,7 @@ FROM ansible/ansible-runner
 
 RUN pip install --upgrade setuptools
 RUN pip install urllib3==1.23
-RUN pip install openshift ansible-runner-http
+RUN pip install openshift==0.6.0 kubernetes==6.0.0 ansible-runner-http
 
 RUN echo "localhost ansible_connection=local" > /etc/ansible/hosts \
     && echo '[defaults]' > /etc/ansible/ansible.cfg \
