@@ -4,10 +4,11 @@ import (
 	"flag"
 	"log"
 	"runtime"
+	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/ansible/operator"
 	proxy "github.com/operator-framework/operator-sdk/pkg/ansible/proxy"
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
+	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -52,7 +53,7 @@ func main() {
 	}
 
 	// start the operator
-	go operator.Run(done, mgr, "/opt/ansible/watches.yaml")
+	go operator.Run(done, mgr, "/opt/ansible/watches.yaml", time.Minute)
 
 	// wait for either to finish
 	err = <-done
