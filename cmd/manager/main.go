@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
 	"runtime"
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/ansible/operator"
 	proxy "github.com/operator-framework/operator-sdk/pkg/ansible/proxy"
-	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
+	k8sutil "github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -27,9 +28,12 @@ func main() {
 	flag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
 
-	namespace, err := k8sutil.GetWatchNamespace()
-	if err != nil {
-		log.Fatalf("failed to get watch namespace: %v", err)
+	namespace, found := os.LookupEnv(k8sutil.WatchNamespaceEnvVar)
+	if found {
+		logrus.Infof("Watching %v namespace.", namespace)
+	} else {
+		logrus.Infof("%v environment variable not set. This operator is watching all namespaces.",
+			k8sutil.WatchNamespaceEnvVar)
 	}
 
 	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{
