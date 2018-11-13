@@ -32,7 +32,7 @@ func main() {
 
 	d, err := time.ParseDuration(*defaultReconcilePeriod)
 	if err != nil {
-		log.Fatalf("failed to get watch namespace: %v", err)
+		logrus.Fatalf("failed to parse reconcile-period: %v", err)
 	}
 
 	namespace, found := os.LookupEnv(k8sutil.WatchNamespaceEnvVar)
