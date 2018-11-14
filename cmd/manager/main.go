@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"os"
 	"runtime"
@@ -11,12 +10,15 @@ import (
 	proxy "github.com/operator-framework/operator-sdk/pkg/ansible/proxy"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	"github.com/spf13/pflag"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/sirupsen/logrus"
 )
+
+var defaultReconcilePeriod = pflag.String("reconcile-period", "1m", "default reconcile period for controllers")
 
 func printVersion() {
 	logrus.Infof("Go Version: %s", runtime.Version())
@@ -25,8 +27,13 @@ func printVersion() {
 }
 
 func main() {
-	flag.Parse()
+	pflag.Parse()
 	logf.SetLogger(logf.ZapLogger(false))
+
+	d, err := time.ParseDuration(*defaultReconcilePeriod)
+	if err != nil {
+		logrus.Fatalf("failed to parse reconcile-period: %v", err)
+	}
 
 	namespace, found := os.LookupEnv(k8sutil.WatchNamespaceEnvVar)
 	if found {
@@ -57,7 +64,7 @@ func main() {
 	}
 
 	// start the operator
-	go operator.Run(done, mgr, "/opt/ansible/watches.yaml", time.Minute)
+	go operator.Run(done, mgr, "/opt/ansible/watches.yaml", d)
 
 	// wait for either to finish
 	err = <-done
