@@ -1,6 +1,6 @@
 FROM ansible/ansible-runner
 
-RUN yum remove -y ansible ansible-runner python-idna
+RUN yum remove -y ansible python-idna
 RUN pip uninstall ansible-runner -y
 
 RUN pip install --upgrade setuptools
