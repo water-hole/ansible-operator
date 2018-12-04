@@ -30,7 +30,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/eventapi"
 
-	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 const (
@@ -54,6 +54,7 @@ type AnsibleOperatorReconciler struct {
 	Client          client.Client
 	EventHandlers   []events.EventHandler
 	ReconcilePeriod time.Duration
+	ManageStatus    bool
 }
 
 // Reconcile - handle the event.
@@ -69,12 +70,11 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 	}
 
 	ident := strconv.Itoa(rand.Int())
-	logger := logrus.WithFields(logrus.Fields{
-		"component": "reconciler",
-		"job":       ident,
-		"name":      u.GetName(),
-		"namespace": u.GetNamespace(),
-	})
+	logger := logf.Log.WithName("reconciler").WithValues(
+		"job", ident,
+		"name", u.GetName(),
+		"namespace", u.GetNamespace(),
+	)
 
 	reconcileResult := reconcile.Result{RequeueAfter: r.ReconcilePeriod}
 	if ds, ok := u.GetAnnotations()[ReconcilePeriodAnnotation]; ok {
@@ -90,7 +90,7 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 	pendingFinalizers := u.GetFinalizers()
 	// If the resource is being deleted we don't want to add the finalizer again
 	if finalizerExists && !deleted && !contains(pendingFinalizers, finalizer) {
-		logger.Debugf("Adding finalizer %s to resource", finalizer)
+		logger.V(1).Info("Adding finalizer to resource", "Finalizer", finalizer)
 		finalizers := append(pendingFinalizers, finalizer)
 		u.SetFinalizers(finalizers)
 		err := r.Client.Update(context.TODO(), u)
@@ -100,41 +100,22 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 	}
 	if !contains(pendingFinalizers, finalizer) && deleted {
 		logger.Info("Resource is terminated, skipping reconcilation")
-		return reconcileResult, nil
+		return reconcile.Result{}, nil
 	}
 
 	spec := u.Object["spec"]
 	_, ok := spec.(map[string]interface{})
 	if !ok {
-		logger.Debugf("spec was not found")
+		logger.V(1).Info("spec was not found")
 		u.Object["spec"] = map[string]interface{}{}
 		err = r.Client.Update(context.TODO(), u)
 		if err != nil {
 			return reconcileResult, err
 		}
 	}
-	statusInterface := u.Object["status"]
-	statusMap, _ := statusInterface.(map[string]interface{})
-	crStatus := ansiblestatus.CreateFromMap(statusMap)
 
-	// If there is no current status add that we are working on this resource.
-	errCond := ansiblestatus.GetCondition(crStatus, ansiblestatus.FailureConditionType)
-	succCond := ansiblestatus.GetCondition(crStatus, ansiblestatus.RunningConditionType)
-
-	// If the condition is currently running, making sure that the values are correct.
-	// If they are the same a no-op, if they are different then it is a good thing we
-	// are updating it.
-	if (errCond == nil && succCond == nil) || (succCond != nil && succCond.Reason != ansiblestatus.SuccessfulReason) {
-		c := ansiblestatus.NewCondition(
-			ansiblestatus.RunningConditionType,
-			v1.ConditionTrue,
-			nil,
-			ansiblestatus.RunningReason,
-			ansiblestatus.RunningMessage,
-		)
-		ansiblestatus.SetCondition(&crStatus, *c)
-		u.Object["status"] = crStatus
-		err = r.Client.Update(context.TODO(), u)
+	if r.ManageStatus {
+		err = r.markRunning(u)
 		if err != nil {
 			return reconcileResult, err
 		}
@@ -160,7 +141,7 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 	// iterate events from ansible, looking for the final one
 	statusEvent := eventapi.StatusJobEvent{}
 	failureMessages := eventapi.FailureMessages{}
-	for event := range result.Events {
+	for event := range result.Events() {
 		for _, eHandler := range r.EventHandlers {
 			go eHandler.Handle(ident, u, event)
 		}
@@ -180,15 +161,14 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 		}
 	}
 	if statusEvent.Event == "" {
-		msg := "did not receive playbook_on_stats event"
-		logger.Error(msg)
+		eventErr := errors.New("did not receive playbook_on_stats event")
 		stdout, err := result.Stdout()
 		if err != nil {
-			logger.Infof("failed to get ansible-runner stdout: %s\n", err.Error())
-		} else {
-			logger.Error(stdout)
+			logger.Error(err, "failed to get ansible-runner stdout")
+			return reconcileResult, err
 		}
-		return reconcileResult, errors.New(msg)
+		logger.Error(eventErr, stdout)
+		return reconcileResult, eventErr
 	}
 
 	// We only want to update the CustomResource once, so we'll track changes and do it at the end
@@ -206,7 +186,53 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 		if err != nil {
 			return reconcileResult, err
 		}
+		return reconcileResult, nil
 	}
+	if r.ManageStatus {
+		err = r.markDone(u, statusEvent, failureMessages)
+		if err != nil {
+			logger.Error(err, "failed to mark status done")
+		}
+	}
+	return reconcileResult, err
+}
+
+func (r *AnsibleOperatorReconciler) markRunning(u *unstructured.Unstructured) error {
+	statusInterface := u.Object["status"]
+	statusMap, _ := statusInterface.(map[string]interface{})
+	crStatus := ansiblestatus.CreateFromMap(statusMap)
+
+	// If there is no current status add that we are working on this resource.
+	errCond := ansiblestatus.GetCondition(crStatus, ansiblestatus.FailureConditionType)
+	succCond := ansiblestatus.GetCondition(crStatus, ansiblestatus.RunningConditionType)
+
+	// If the condition is currently running, making sure that the values are correct.
+	// If they are the same a no-op, if they are different then it is a good thing we
+	// are updating it.
+	if (errCond == nil && succCond == nil) || (succCond != nil && succCond.Reason != ansiblestatus.SuccessfulReason) {
+		c := ansiblestatus.NewCondition(
+			ansiblestatus.RunningConditionType,
+			v1.ConditionTrue,
+			nil,
+			ansiblestatus.RunningReason,
+			ansiblestatus.RunningMessage,
+		)
+		ansiblestatus.SetCondition(&crStatus, *c)
+		u.Object["status"] = crStatus.GetJSONMap()
+		err := r.Client.Update(context.TODO(), u)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *AnsibleOperatorReconciler) markDone(u *unstructured.Unstructured, statusEvent eventapi.StatusJobEvent, failureMessages eventapi.FailureMessages) error {
+	statusInterface := u.Object["status"]
+	statusMap, _ := statusInterface.(map[string]interface{})
+	crStatus := ansiblestatus.CreateFromMap(statusMap)
+
+	runSuccessful := len(failureMessages) == 0
 	ansibleStatus := ansiblestatus.NewAnsibleResultFromStatusJobEvent(statusEvent)
 
 	if !runSuccessful {
@@ -234,10 +260,9 @@ func (r *AnsibleOperatorReconciler) Reconcile(request reconcile.Request) (reconc
 		ansiblestatus.SetCondition(&crStatus, *c)
 	}
 	// This needs the status subresource to be enabled by default.
-	u.Object["status"] = crStatus
-	err = r.Client.Update(context.TODO(), u)
-	return reconcileResult, err
+	u.Object["status"] = crStatus.GetJSONMap()
 
+	return r.Client.Update(context.TODO(), u)
 }
 
 func contains(l []string, s string) bool {

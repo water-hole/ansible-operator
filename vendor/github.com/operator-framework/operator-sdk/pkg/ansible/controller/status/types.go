@@ -15,13 +15,17 @@
 package status
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/eventapi"
-	"github.com/sirupsen/logrus"
+
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
+
+var log = logf.Log.WithName("controller.status")
 
 const (
 	host = "localhost"
@@ -118,7 +122,7 @@ func createConditionFromMap(cm map[string]interface{}) Condition {
 	if !ok {
 		message = RunningMessage
 	}
-	asm, ok := cm["ansibleStatus"].(map[string]interface{})
+	asm, ok := cm["ansibleResult"].(map[string]interface{})
 	var ansibleResult *AnsibleResult
 	if ok {
 		ansibleResult = NewAnsibleResultFromMap(asm)
@@ -128,7 +132,7 @@ func createConditionFromMap(cm map[string]interface{}) Condition {
 	if ok {
 		t, err := time.Parse("2006-01-02T15:04:05Z", ltts)
 		if err != nil {
-			logrus.Warningf("unable to parse time for status condition: %v", ltts)
+			log.Info("unable to parse time for status condition", "Time", ltts)
 		} else {
 			ltt = metav1.NewTime(t)
 		}
@@ -158,10 +162,27 @@ func CreateFromMap(statusMap map[string]interface{}) Status {
 	for _, ci := range conditionsInterface {
 		cm, ok := ci.(map[string]interface{})
 		if !ok {
-			logrus.Warningf("unknown condition, removing condition: %v", ci)
+			log.Info("unknown condition, removing condition", "ConditionInterface", ci)
 			continue
 		}
 		conditions = append(conditions, createConditionFromMap(cm))
 	}
 	return Status{Conditions: conditions}
+}
+
+// GetJSONMap - gets the map value for the status object.
+// This is used to set the status on the CR.
+// This is needed because the unstructured type has special rules around DeepCopy.
+// If you do not convert the status to the map, then DeepCopy for the
+// unstructured will fail and throw runtime exceptions.
+// Please note that this will return an empty map on error.
+func (status *Status) GetJSONMap() map[string]interface{} {
+	m := map[string]interface{}{}
+	b, err := json.Marshal(status)
+	if err != nil {
+		log.Error(err, "unable to marshal json")
+		return m
+	}
+	json.Unmarshal(b, &m)
+	return m
 }
