@@ -58,6 +58,8 @@ func main() {
 		Address:    "localhost",
 		Port:       8888,
 		KubeConfig: mgr.GetConfig(),
+		RESTMapper: mgr.GetRESTMapper(),
+		Cache:      mgr.GetCache(),
 	})
 	if err != nil {
 		logrus.Fatalf("error starting proxy: %v", err)

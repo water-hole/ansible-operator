@@ -28,18 +28,22 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/ansible/paramconv"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/eventapi"
 	"github.com/operator-framework/operator-sdk/pkg/ansible/runner/internal/inputdir"
-	"github.com/sirupsen/logrus"
+
 	yaml "gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
+
+var log = logf.Log.WithName("runner")
 
 // Runner - a runnable that should take the parameters and name and namespace
 // and run the correct code.
 type Runner interface {
-	Run(string, *unstructured.Unstructured, string) (*RunResult, error)
+	Run(string, *unstructured.Unstructured, string) (RunResult, error)
 	GetFinalizer() (string, bool)
 	GetReconcilePeriod() (time.Duration, bool)
+	GetManageStatus() bool
 }
 
 // watch holds data used to create a mapping of GVK to ansible playbook or role.
@@ -51,6 +55,7 @@ type watch struct {
 	Playbook        string     `yaml:"playbook"`
 	Role            string     `yaml:"role"`
 	ReconcilePeriod string     `yaml:"reconcilePeriod"`
+	ManageStatus    bool       `yaml:"manageStatus"`
 	Finalizer       *Finalizer `yaml:"finalizer"`
 }
 
@@ -62,17 +67,29 @@ type Finalizer struct {
 	Vars     map[string]interface{} `yaml:"vars"`
 }
 
+// UnmarshalYaml - implements the yaml.Unmarshaler interface
+func (w *watch) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// by default, the operator will manage status
+	w.ManageStatus = true
+
+	// hide watch data in plain struct to prevent unmarshal from calling
+	// UnmarshalYAML again
+	type plain watch
+
+	return unmarshal((*plain)(w))
+}
+
 // NewFromWatches reads the operator's config file at the provided path.
 func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		logrus.Errorf("failed to get config file %v", err)
+		log.Error(err, "failed to get config file")
 		return nil, err
 	}
 	watches := []watch{}
 	err = yaml.Unmarshal(b, &watches)
 	if err != nil {
-		logrus.Errorf("failed to unmarshal config %v", err)
+		log.Error(err, "failed to unmarshal config")
 		return nil, err
 	}
 
@@ -98,13 +115,13 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 		}
 		switch {
 		case w.Playbook != "":
-			r, err := NewForPlaybook(w.Playbook, s, w.Finalizer, reconcilePeriod)
+			r, err := NewForPlaybook(w.Playbook, s, w.Finalizer, reconcilePeriod, w.ManageStatus)
 			if err != nil {
 				return nil, err
 			}
 			m[s] = r
 		case w.Role != "":
-			r, err := NewForRole(w.Role, s, w.Finalizer, reconcilePeriod)
+			r, err := NewForRole(w.Role, s, w.Finalizer, reconcilePeriod, w.ManageStatus)
 			if err != nil {
 				return nil, err
 			}
@@ -117,7 +134,7 @@ func NewFromWatches(path string) (map[schema.GroupVersionKind]Runner, error) {
 }
 
 // NewForPlaybook returns a new Runner based on the path to an ansible playbook.
-func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finalizer, reconcilePeriod *time.Duration) (Runner, error) {
+func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finalizer, reconcilePeriod *time.Duration, manageStatus bool) (Runner, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("playbook path must be absolute for %v", gvk)
 	}
@@ -131,6 +148,7 @@ func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finaliz
 			return exec.Command("ansible-runner", "-vv", "-p", path, "-i", ident, "run", inputDirPath)
 		},
 		reconcilePeriod: reconcilePeriod,
+		manageStatus:    manageStatus,
 	}
 	err := r.addFinalizer(finalizer)
 	if err != nil {
@@ -140,7 +158,7 @@ func NewForPlaybook(path string, gvk schema.GroupVersionKind, finalizer *Finaliz
 }
 
 // NewForRole returns a new Runner based on the path to an ansible role.
-func NewForRole(path string, gvk schema.GroupVersionKind, finalizer *Finalizer, reconcilePeriod *time.Duration) (Runner, error) {
+func NewForRole(path string, gvk schema.GroupVersionKind, finalizer *Finalizer, reconcilePeriod *time.Duration, manageStatus bool) (Runner, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("role path must be absolute for %v", gvk)
 	}
@@ -156,6 +174,7 @@ func NewForRole(path string, gvk schema.GroupVersionKind, finalizer *Finalizer, 
 			return exec.Command("ansible-runner", "-vv", "--role", roleName, "--roles-path", rolePath, "--hosts", "localhost", "-i", ident, "run", inputDirPath)
 		},
 		reconcilePeriod: reconcilePeriod,
+		manageStatus:    manageStatus,
 	}
 	err := r.addFinalizer(finalizer)
 	if err != nil {
@@ -172,18 +191,19 @@ type runner struct {
 	cmdFunc          func(ident, inputDirPath string) *exec.Cmd // returns a Cmd that runs ansible-runner
 	finalizerCmdFunc func(ident, inputDirPath string) *exec.Cmd
 	reconcilePeriod  *time.Duration
+	manageStatus     bool
 }
 
-func (r *runner) Run(ident string, u *unstructured.Unstructured, kubeconfig string) (*RunResult, error) {
+func (r *runner) Run(ident string, u *unstructured.Unstructured, kubeconfig string) (RunResult, error) {
 	if u.GetDeletionTimestamp() != nil && !r.isFinalizerRun(u) {
 		return nil, errors.New("resource has been deleted, but no finalizer was matched, skipping reconciliation")
 	}
-	logger := logrus.WithFields(logrus.Fields{
-		"component": "runner",
-		"job":       ident,
-		"name":      u.GetName(),
-		"namespace": u.GetNamespace(),
-	})
+	logger := log.WithValues(
+		"job", ident,
+		"name", u.GetName(),
+		"namespace", u.GetNamespace(),
+	)
+
 	// start the event receiver. We'll check errChan for an error after
 	// ansible-runner exits.
 	errChan := make(chan error, 1)
@@ -219,15 +239,15 @@ func (r *runner) Run(ident string, u *unstructured.Unstructured, kubeconfig stri
 	go func() {
 		var dc *exec.Cmd
 		if r.isFinalizerRun(u) {
-			logger.Debugf("Resource is marked for deletion, running finalizer %s", r.Finalizer.Name)
+			logger.V(1).Info("Resource is marked for deletion, running finalizer", "Finalizer", r.Finalizer.Name)
 			dc = r.finalizerCmdFunc(ident, inputDir.Path)
 		} else {
 			dc = r.cmdFunc(ident, inputDir.Path)
 		}
 
-		err := dc.Run()
+		output, err := dc.CombinedOutput()
 		if err != nil {
-			logger.Errorf("error from ansible-runner: %s", err.Error())
+			logger.Error(err, string(output))
 		} else {
 			logger.Info("ansible-runner exited successfully")
 		}
@@ -236,11 +256,11 @@ func (r *runner) Run(ident string, u *unstructured.Unstructured, kubeconfig stri
 		err = <-errChan
 		// http.Server returns this in the case of being closed cleanly
 		if err != nil && err != http.ErrServerClosed {
-			logger.Errorf("error from event api: %s", err.Error())
+			logger.Error(err, "error from event api")
 		}
 	}()
-	return &RunResult{
-		Events:   receiver.Events,
+	return &runResult{
+		events:   receiver.Events,
 		inputDir: &inputDir,
 		ident:    ident,
 	}, nil
@@ -252,6 +272,11 @@ func (r *runner) GetReconcilePeriod() (time.Duration, bool) {
 		return time.Duration(0), false
 	}
 	return *r.reconcilePeriod, true
+}
+
+// GetManageStatus - get the manage status
+func (r *runner) GetManageStatus() bool {
+	return r.manageStatus
 }
 
 func (r *runner) GetFinalizer() (string, bool) {
@@ -317,7 +342,7 @@ func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interfa
 	s := u.Object["spec"]
 	spec, ok := s.(map[string]interface{})
 	if !ok {
-		logrus.Warnf("spec was not found for CR:%v - %v in %v", u.GroupVersionKind(), u.GetNamespace(), u.GetName())
+		log.Info("spec was not found for CR", "GroupVersionKind", u.GroupVersionKind(), "Namespace", u.GetNamespace(), "Name", u.GetName())
 		spec = map[string]interface{}{}
 	}
 	parameters := paramconv.MapToSnake(spec)
@@ -332,17 +357,30 @@ func (r *runner) makeParameters(u *unstructured.Unstructured) map[string]interfa
 	return parameters
 }
 
+// RunResult - result of a ansible run
+type RunResult interface {
+	// Stdout returns the stdout from ansible-runner if it is available, else an error.
+	Stdout() (string, error)
+	// Events returns the events from ansible-runner if it is available, else an error.
+	Events() <-chan eventapi.JobEvent
+}
+
 // RunResult facilitates access to information about a run of ansible.
-type RunResult struct {
+type runResult struct {
 	// Events is a channel of events from ansible that contain state related
 	// to a run of ansible.
-	Events <-chan eventapi.JobEvent
+	events <-chan eventapi.JobEvent
 
 	ident    string
 	inputDir *inputdir.InputDir
 }
 
 // Stdout returns the stdout from ansible-runner if it is available, else an error.
-func (r *RunResult) Stdout() (string, error) {
+func (r *runResult) Stdout() (string, error) {
 	return r.inputDir.Stdout(r.ident)
+}
+
+// Events returns the events from ansible-runner if it is available, else an error.
+func (r *runResult) Events() <-chan eventapi.JobEvent {
+	return r.events
 }

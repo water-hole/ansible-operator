@@ -190,7 +190,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:a1f9474a98bde5f0ab186991f0536a5605a1c74dcd86862c2787947d1bc6173f"
+  digest = "1:cab80fe8d1860daef57cc64f5a27e74cacf710086a2f0d2e6ff87e34deb25290"
   name = "github.com/operator-framework/operator-sdk"
   packages = [
     "pkg/ansible/controller",
@@ -200,6 +200,7 @@
     "pkg/ansible/paramconv",
     "pkg/ansible/proxy",
     "pkg/ansible/proxy/kubeconfig",
+    "pkg/ansible/proxy/requestfactory",
     "pkg/ansible/runner",
     "pkg/ansible/runner/eventapi",
     "pkg/ansible/runner/internal/inputdir",
@@ -207,7 +208,7 @@
     "version",
   ]
   pruneopts = "UT"
-  revision = "675fb6eec71a59b0caad062eacc90459c558c8c3"
+  revision = "fc428c9b9dc053a4c90a6c6d3ff43d778e7e2e8f"
 
 [[projects]]
   digest = "1:e5d0bd87abc2781d14e274807a470acd180f0499f8bf5bb18606e9ec22ad9de9"
@@ -401,12 +402,13 @@
   version = "kubernetes-1.11.2"
 
 [[projects]]
-  digest = "1:1b170c7e75fd93e3ab2dcc985a8528e832f5bd915be0e65347e0ba6e3325d14c"
+  digest = "1:d39abbbac72d0eba03bf3fa8bb3a19a686def0108f058cfd8a2b374256e43fcb"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/errors",
     "pkg/api/meta",
     "pkg/api/resource",
+    "pkg/api/validation/path",
     "pkg/apis/meta/internalversion",
     "pkg/apis/meta/v1",
     "pkg/apis/meta/v1/unstructured",
