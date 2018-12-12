@@ -32,7 +32,7 @@ jobs:
           # - minikube update-context
         - sudo service docker stop
         - sudo sed -i 's/DOCKER_OPTS=\"/DOCKER_OPTS=\"--insecure-registry 172.30.0.0\/16 /' /etc/default/docker
-        - sudo docker start
+        - sudo service docker start
 
         - oc cluster up
         - oc login -u system:admin
